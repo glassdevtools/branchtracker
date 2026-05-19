@@ -24,24 +24,26 @@ test("keeps rows at least one line tall", () => {
     readCommitHistoryRowHeight({
       lineCount: 0,
       rowHeight: 20,
+      stackedLineHeight: 16,
     }),
     20,
   );
 });
 
-test("sizes multi-line commit rows without adding graph rows", () => {
+test("sizes multi-line commit rows from stacked line height", () => {
   const layout = readCommitHistoryRowLayouts({
     rows: [{ lineCount: 1 }, { lineCount: 3 }, { lineCount: 1 }],
     rowHeight: 20,
+    stackedLineHeight: 16,
   });
 
   assert.deepEqual(layout, {
     rowLayouts: [
       { top: 0, center: 10, height: 20 },
-      { top: 20, center: 50, height: 60 },
-      { top: 80, center: 90, height: 20 },
+      { top: 20, center: 46, height: 52 },
+      { top: 72, center: 82, height: 20 },
     ],
-    totalHeight: 100,
+    totalHeight: 92,
   });
 });
 

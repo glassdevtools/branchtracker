@@ -69,19 +69,23 @@ export const replaceCommitHistoryColumnWidth = ({
 export const readCommitHistoryRowHeight = ({
   lineCount,
   rowHeight,
+  stackedLineHeight,
 }: {
   lineCount: number;
   rowHeight: number;
+  stackedLineHeight: number;
 }) => {
-  return Math.max(1, lineCount) * rowHeight;
+  return rowHeight + Math.max(0, lineCount - 1) * stackedLineHeight;
 };
 
 export const readCommitHistoryRowLayouts = ({
   rows,
   rowHeight,
+  stackedLineHeight,
 }: {
   rows: { lineCount: number }[];
   rowHeight: number;
+  stackedLineHeight: number;
 }) => {
   const rowLayouts: CommitHistoryRowLayout[] = [];
   let totalHeight = 0;
@@ -90,6 +94,7 @@ export const readCommitHistoryRowLayouts = ({
     const height = readCommitHistoryRowHeight({
       lineCount: row.lineCount,
       rowHeight,
+      stackedLineHeight,
     });
 
     rowLayouts.push({
