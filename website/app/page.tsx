@@ -56,7 +56,7 @@ const featureItems = [
     title: "Git power tools",
     descriptionLines: [
       "Commit, branch, merge, update main, and push without leaving the app.",
-      "We have intuitive Git features: move branches by simply dragging, merge branches by simply clicking the row you'd like to merge, and see Pull/Push summaries that actually make sense.",
+      "We let you move branches by simply dragging, merge by simply clicking the row you'd like, and get Pull/Push summaries that actually make sense.",
     ],
   },
   {
@@ -175,8 +175,7 @@ const HomePage = () => {
               <span>BranchMaster</span>
             </h1>
             <p className="heroSubtext">
-              Easily merge your branches together. BranchMaster lets you manage
-              your chats, branches, and worktrees in one place.
+              See and manage every chat, branch, and worktree, all on one page.
             </p>
 
             <div className="hero__actions">
