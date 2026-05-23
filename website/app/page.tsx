@@ -21,19 +21,6 @@ const featureInlineTokenClassName =
 const featureTokenChatIconClassName =
   "inline-flex h-[1.45em] w-[1.45em] items-center justify-center rounded border border-[#d4dae3] bg-[#eef0f3]";
 
-const AgentToken = () => (
-  <span className={featureInlineTokenClassName}>
-    {/* dot */}
-    <span
-      className="relative block size-[13px] shrink-0 overflow-visible"
-      aria-hidden="true"
-    >
-      <span className="absolute left-1/2 top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#8b929c]" />
-    </span>
-    <span>agents</span>
-  </span>
-);
-
 const BranchToken = () => (
   <span className={featureTokenBranchClassName}>branches</span>
 );
@@ -84,9 +71,7 @@ const featureItems = [
 ];
 const questionItems = [
   <>Which chats still need to be merged in?</>,
-  <>
-    Which <AgentToken /> have changes to review?
-  </>,
+  <>Which agents have changes to review?</>,
   <>
     Which <ChatToken /> are on which <BranchToken />?
   </>,
