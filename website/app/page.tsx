@@ -175,7 +175,7 @@ const HomePage = () => {
               <span>BranchMaster</span>
             </h1>
             <p className="heroSubtext">
-              See and manage every chat, branch, and worktree, all on one page.
+              See every worktree, chat, and branch, all on one page.
             </p>
 
             <div className="hero__actions">
