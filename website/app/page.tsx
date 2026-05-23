@@ -53,23 +53,16 @@ const ChatToken = () => (
 
 const featureItems = [
   {
-    title: "Easily merge your agents",
+    title: "Git power tools",
     descriptionLines: [
-      "It's easy to spin up 100 AI worktrees, but merging them back together is hard. BranchMaster was built to fix that. Commit, branch, merge, update main, and push without leaving the app.",
+      "Commit, branch, merge, update main, and push without leaving the app.",
+      "We have intuitive Git features: move branches by simply dragging, merge branches by simply clicking the row you'd like to merge, and see Pull/Push summaries that actually make sense.",
     ],
   },
   {
     title: "Everything on a single page",
     descriptionLines: [
-      <>
-        View all your <BranchToken />, <ChatToken />, and <AgentToken />.
-      </>,
-    ],
-  },
-  {
-    title: "Git power tools",
-    descriptionLines: [
-      "Access power tools like one-click merge, simplified push and pull, and moving branches by simply dragging.",
+      "Unlike other git visualizers, we show you all your worktrees - even ones with no commits or branch tags yet. Finally get a complete overview of everything your agents are doing.",
     ],
   },
   {
