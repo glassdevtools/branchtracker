@@ -13,15 +13,8 @@ const ctaDownloadButtonClassName = "ctaButton ctaButtonDownload";
 const ctaGithubButtonClassName = "ctaButton ctaButtonGithub";
 const downloadButtonClassName = "downloadButton";
 const githubButtonClassName = "githubButton";
-const featureTokenClassName =
-  "inline-flex h-[1.45em] items-center gap-1 rounded border px-[5px] align-middle text-[0.9em] font-[720] leading-none whitespace-nowrap";
-const featureTokenBranchClassName = `${featureTokenClassName} border-[#acb9ca] bg-[#eaf1ff] text-[#162d54]`;
 const featureTokenChatIconClassName =
   "inline-flex h-[1.45em] w-[1.45em] items-center justify-center rounded border border-[#d4dae3] bg-[#eef0f3] align-middle";
-
-const BranchToken = () => (
-  <span className={featureTokenBranchClassName}>branches</span>
-);
 
 const ChatToken = () => (
   <span className={featureTokenChatIconClassName}>
@@ -68,7 +61,7 @@ const questionItems = [
   <>Which chats still need to be merged in?</>,
   <>Which agents have changes to review?</>,
   <>
-    Which chats <ChatToken /> are on which <BranchToken />?
+    Which chats <ChatToken /> are on which branches?
   </>,
 ];
 
