@@ -26,10 +26,10 @@ const BranchToken = () => (
 const ChatToken = () => (
   <span className={featureTokenChatIconClassName}>
     <Image
-      className="block size-[13px] shrink-0"
+      className="block size-[15px] shrink-0"
       src={codexChatIcon}
-      width={13}
-      height={13}
+      width={15}
+      height={15}
       alt=""
       aria-hidden="true"
       draggable={false}
@@ -68,7 +68,7 @@ const questionItems = [
   <>Which chats still need to be merged in?</>,
   <>Which agents have changes to review?</>,
   <>
-    Which <ChatToken /> chats are on which <BranchToken />?
+    Which chats <ChatToken /> are on which <BranchToken />?
   </>,
 ];
 
