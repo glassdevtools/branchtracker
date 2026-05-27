@@ -17,7 +17,7 @@ const featureTokenClassName =
   "inline-flex h-[1.45em] items-center gap-1 rounded border px-[5px] align-middle text-[0.9em] font-[720] leading-none whitespace-nowrap";
 const featureTokenBranchClassName = `${featureTokenClassName} border-[#acb9ca] bg-[#eaf1ff] text-[#162d54]`;
 const featureTokenChatIconClassName =
-  "inline-flex h-[1.45em] w-[1.45em] items-center justify-center rounded border border-[#d4dae3] bg-[#eef0f3]";
+  "inline-flex h-[1.45em] w-[1.45em] items-center justify-center rounded border border-[#d4dae3] bg-[#eef0f3] align-middle";
 
 const BranchToken = () => (
   <span className={featureTokenBranchClassName}>branches</span>
