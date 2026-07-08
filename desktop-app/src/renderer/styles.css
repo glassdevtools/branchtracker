@@ -479,7 +479,8 @@ textarea,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 10px 6px 14px;
+  /* The 15px offset centers this 24px row on the main header's repo name (12px list padding + half its 30px band). */
+  padding: 15px 10px 6px 14px;
   color: #5f6670;
   font-size: 12px;
   font-weight: 700;
@@ -490,42 +491,37 @@ textarea,
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
   overflow-y: auto;
-  padding: 0 8px 8px;
+  /* The 7px offset makes the first item start at the main content card's top edge (52px from the shell top). */
+  padding: 7px 8px 8px;
 }
 
+/* Each item is one button that fills its whole slot, so clicks and hovers work anywhere in the row.
+   Transparent borders clip the painted background, so highlights still look spaced apart. */
 .repo-sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border-radius: 8px;
-}
-
-.repo-sidebar-item:hover {
-  background: #eef1f4;
-}
-
-.repo-sidebar-item-selected,
-.repo-sidebar-item-selected:hover {
-  background: #e6ebf1;
-}
-
-.repo-sidebar-item-button {
   min-width: 0;
-  flex: 1;
-  padding: 6px 4px 6px 8px;
-  border: 0;
+  padding: 4px 4px 4px 8px;
+  border: 2px solid transparent;
+  border-inline-width: 0;
+  border-radius: 6px;
   background: transparent;
+  background-clip: padding-box;
   color: #374151;
-  font-size: 13px;
+  font-size: 12.5px;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.repo-sidebar-item-selected .repo-sidebar-item-button {
+/* background-color keeps the padding-box clip; the background shorthand would reset it and fill the whole row. */
+.repo-sidebar-item:hover {
+  background-color: #eeeeef;
+}
+
+.repo-sidebar-item-selected,
+.repo-sidebar-item-selected:hover {
+  background-color: #e5e6e8;
   color: #111827;
   font-weight: 650;
 }

@@ -7953,23 +7953,19 @@ const BranchMasterDesktopApp = () => {
                 </div>
                 <div className="repo-sidebar-list">
                   {savedRepoRoots.map((repoRoot) => (
-                    <div
+                    <button
                       className={cn(
                         "repo-sidebar-item",
                         preloadSelectedRepoRoot === repoRoot &&
                           "repo-sidebar-item-selected",
                       )}
+                      type="button"
+                      title={repoRoot}
                       key={repoRoot}
+                      onClick={() => changeSelectedRepoRoot(repoRoot)}
                     >
-                      <button
-                        className="repo-sidebar-item-button"
-                        type="button"
-                        title={repoRoot}
-                        onClick={() => changeSelectedRepoRoot(repoRoot)}
-                      >
-                        {readRepoRootFolderName(repoRoot)}
-                      </button>
-                    </div>
+                      {readRepoRootFolderName(repoRoot)}
+                    </button>
                   ))}
                 </div>
               </aside>
@@ -8596,26 +8592,22 @@ const BranchMasterDesktopApp = () => {
             </div>
             <div className="repo-sidebar-list">
               {dashboardData.repos.map((repo) => (
-                <div
+                <button
                   className={cn(
                     "repo-sidebar-item",
                     selectedRepo?.root === repo.root &&
                       "repo-sidebar-item-selected",
                   )}
+                  type="button"
+                  title={repo.root}
                   key={repo.root}
+                  onClick={() => changeSelectedRepoRoot(repo.root)}
                   onContextMenu={(event) =>
                     openRepoSidebarContextMenu(event, repo)
                   }
                 >
-                  <button
-                    className="repo-sidebar-item-button"
-                    type="button"
-                    title={repo.root}
-                    onClick={() => changeSelectedRepoRoot(repo.root)}
-                  >
-                    {readRepoFolderName(repo)}
-                  </button>
-                </div>
+                  {readRepoFolderName(repo)}
+                </button>
               ))}
               {dashboardData.repos.length === 0 ? (
                 <p className="repo-sidebar-empty">No repositories yet.</p>
