@@ -6,9 +6,12 @@ import {
   CircleArrowUp,
   Copy,
   FileDiff,
+  FolderOpen,
   GitCompareArrows,
   ListFilter,
   LoaderCircle,
+  Plus,
+  RefreshCw,
   Settings,
   Tag,
   TriangleAlert,
@@ -45,6 +48,7 @@ import type {
   ReactElement,
   ReactNode,
 } from "react";
+import { GITHUB_CREDENTIAL_FIX_COMMAND } from "../shared/types";
 import type {
   AppUpdateStatus,
   ChatProviderDetection,
@@ -94,7 +98,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Toaster, toast } from "@/components/ui/sonner";
 import {
@@ -193,6 +196,8 @@ const TERMINAL_SCROLLBACK_ROWS = 1000;
 const DASHBOARD_REFRESH_INTERVAL_MS = 1000;
 const TOAST_POSITION = "bottom-center";
 const UNFOCUSED_ERROR_TOAST_DURATION_MS = Infinity;
+// Dashboard warnings describe ongoing conditions, so they stay until the user closes them or the condition clears.
+const DASHBOARD_WARNING_TOAST_DURATION_MS = Infinity;
 const USER_GIT_UPDATE_TOAST_ID_PREFIX = "user-git-update";
 const DASHBOARD_WARNING_TOAST_ID_PREFIX = "dashboard-warning";
 const GITHUB_REPOSITORY_URL = packageInfo.repository.url.replace(/\.git$/, "");
@@ -351,6 +356,13 @@ const readCaughtUserFacingErrorMessage = ({
   return userFacingMessage;
 };
 
+const showInfoToast = (message: string) => {
+  toast.info(message, {
+    closeButton: true,
+    position: TOAST_POSITION,
+  });
+};
+
 const showErrorToast = ({
   title,
   description,
@@ -402,14 +414,20 @@ const readGitRefCreateText = (gitRefType: "branch" | "tag") => {
   }
 };
 
-const readBranchSyncActionText = (
-  action: BranchSyncAction,
-): BranchSyncActionText => {
+const readBranchSyncActionText = ({
+  action,
+  branchSyncChanges,
+}: {
+  action: BranchSyncAction;
+  branchSyncChanges: GitBranchSyncChange[];
+}): BranchSyncActionText => {
+  const changeTypeText = readBranchSyncChangeTypeText(branchSyncChanges);
+
   switch (action) {
     case "push":
       return {
         title: "Push",
-        message: "Push local tag changes to origin?",
+        message: `Push local ${changeTypeText} changes to origin?`,
         buttonText: "Push",
         loadingDescription: "Pushing",
         successMessage: "Successfully pushed to origin.",
@@ -417,8 +435,7 @@ const readBranchSyncActionText = (
     case "revert":
       return {
         title: "Sync",
-        message:
-          "Revert local tag changes so they match origin? This will undo these tag changes from happening:",
+        message: `Revert local ${changeTypeText} changes so they match origin? This will undo these ${changeTypeText} changes from happening:`,
         buttonText: "Sync",
         loadingDescription: "Syncing",
         successMessage: "Successfully synced with origin.",
@@ -533,11 +550,6 @@ const readChatProviderLabel = (providerId: ChatProviderId) => {
       return "OpenCode";
   }
 };
-
-const DEFAULT_CHAT_PROVIDER_DETECTIONS: ChatProviderDetection[] = [
-  { providerId: "codex", isDetected: false },
-  { providerId: "openCode", isDetected: false },
-];
 
 const ChatProviderDetectionStatus = ({
   isDetected,
@@ -839,7 +851,7 @@ const copyText = async ({
   try {
     await window.branchmaster.copyText(text);
     toast.success("Copied!", {
-      closeButton: false,
+      closeButton: true,
       description: <div className="copy-toast-value">{text}</div>,
       position: TOAST_POSITION,
     });
@@ -852,8 +864,12 @@ const copyText = async ({
   }
 };
 
+const readRepoRootFolderName = (repoRoot: string) => {
+  return repoRoot.split("/").pop() ?? repoRoot;
+};
+
 const readRepoFolderName = (repo: RepoGraph) => {
-  return repo.root.split("/").pop() ?? repo.root;
+  return readRepoRootFolderName(repo.root);
 };
 
 // TODO: AI-PICKED-VALUE: These column widths match the current table layout closely enough while making drag resizing concrete.
@@ -963,7 +979,7 @@ type CopyContextMenuItem = {
 type RowContextMenuTarget = {
   x: number;
   y: number;
-  copyMenuItem: CopyContextMenuItem | null;
+  copyMenuItems: CopyContextMenuItem[];
   sha: string | null;
   isEnabled: boolean;
   pullRequestTarget: GitPullRequestCreateTarget | null;
@@ -1185,10 +1201,15 @@ const updateCommitHistoryColumnStyles = (
 
 const cleanRefName = (ref: string) => {
   const headPrefix = "HEAD -> ";
+  const originHeadPrefix = "origin/HEAD -> ";
   const tagPrefix = "tag: ";
 
   if (ref.startsWith(headPrefix)) {
     return ref.slice(headPrefix.length);
+  }
+
+  if (ref.startsWith(originHeadPrefix)) {
+    return "origin/HEAD";
   }
 
   if (ref.startsWith(tagPrefix)) {
@@ -1218,6 +1239,14 @@ const readPushedBranchNamesForCommit = (commit: GitCommit) => {
   const isPushedBranchOfBranch: { [branch: string]: boolean } = {};
   const isBranchAddedOfBranch: { [branch: string]: boolean } = {};
   const branches: string[] = [];
+  const pushBranch = (branch: string) => {
+    if (isBranchAddedOfBranch[branch] === true) {
+      return;
+    }
+
+    isBranchAddedOfBranch[branch] = true;
+    branches.push(branch);
+  };
 
   for (const ref of commit.refs) {
     const branch = readOriginBranchName(ref);
@@ -1227,16 +1256,19 @@ const readPushedBranchNamesForCommit = (commit: GitCommit) => {
     }
   }
 
+  // Local branch names come first so the preselected head branch matches what the user sees on the row.
   for (const branch of commit.localBranches) {
-    if (
-      isPushedBranchOfBranch[branch] !== true ||
-      isBranchAddedOfBranch[branch] === true
-    ) {
-      continue;
+    if (isPushedBranchOfBranch[branch] === true) {
+      pushBranch(branch);
     }
+  }
 
-    isBranchAddedOfBranch[branch] = true;
-    branches.push(branch);
+  for (const ref of commit.refs) {
+    const branch = readOriginBranchName(ref);
+
+    if (branch !== null) {
+      pushBranch(branch);
+    }
   }
 
   return branches;
@@ -1588,9 +1620,6 @@ const createCommitGraph = ({
     nextLanes.splice(lane, 1);
     const parentLanes: CommitGraphLane[] = [];
 
-    // dsf
-    // setFdLimitdsf
-    // sdf
     for (
       let parentIndex = 0;
       parentIndex < graphItem.parents.length;
@@ -1918,6 +1947,11 @@ const BranchTags = ({
       const originPrefix = "origin/";
 
       if (ref.startsWith("tag: ") || !refName.startsWith(originPrefix)) {
+        return false;
+      }
+
+      // origin/HEAD only mirrors the remote's default branch, which already shows as its own origin badge.
+      if (refName === "origin/HEAD") {
         return false;
       }
 
@@ -2283,9 +2317,11 @@ const CommitThreadChatTags = ({
 const CommitGraphSvg = ({
   graph,
   graphWidth,
+  shouldShowDotStubsOnly,
 }: {
   graph: CommitGraph;
   graphWidth: number;
+  shouldShowDotStubsOnly: boolean;
 }) => {
   const graphRowLayout = readCommitHistoryRowLayouts({
     rows: graph.rows,
@@ -2322,32 +2358,57 @@ const CommitGraphSvg = ({
       viewBox={`0 0 ${graphWidth} ${graphHeight}`}
       aria-hidden="true"
     >
-      {graph.segments.map((segment) => {
-        const fromX = readCommitGraphX(segment.fromLane);
-        const toX = readCommitGraphX(segment.toLane);
-        const fromY = readSegmentY(segment.fromRowIndex);
-        const toY = readSegmentY(segment.toRowIndex);
-        const rowTopConnectionY = Math.min(
-          readSegmentConnectionY(segment.toRowIndex),
-          toY,
-        );
-        const path =
-          fromX === toX
-            ? `M ${fromX} ${fromY} L ${toX} ${toY}`
-            : `M ${fromX} ${fromY} L ${toX} ${rowTopConnectionY} L ${toX} ${toY}`;
+      {shouldShowDotStubsOnly
+        ? // Filtered rows hide the commits between dots, so topology lines would mislead.
+          // A short line through each dot marks continuity without claiming a direct connection.
+          graph.rows.map((row, rowIndex) => {
+            const rowLayout = graphRowLayout.rowLayouts[rowIndex];
 
-        return (
-          <path
-            key={`${segment.fromRowIndex}-${segment.toRowIndex}-${segment.fromLane}-${segment.toLane}-${segment.color}-${segment.isMergeSegment}`}
-            d={path}
-            fill="none"
-            stroke={segment.color}
-            strokeWidth={COMMIT_GRAPH_SEGMENT_STROKE_WIDTH}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        );
-      })}
+            if (rowLayout === undefined) {
+              return null;
+            }
+
+            const stubX = readCommitGraphX(row.lane);
+
+            return (
+              <line
+                key={`stub:${row.id}`}
+                x1={stubX}
+                y1={rowLayout.top}
+                x2={stubX}
+                y2={rowLayout.top + rowLayout.height}
+                stroke={row.color}
+                strokeWidth={COMMIT_GRAPH_SEGMENT_STROKE_WIDTH}
+                strokeLinecap="round"
+              />
+            );
+          })
+        : graph.segments.map((segment) => {
+            const fromX = readCommitGraphX(segment.fromLane);
+            const toX = readCommitGraphX(segment.toLane);
+            const fromY = readSegmentY(segment.fromRowIndex);
+            const toY = readSegmentY(segment.toRowIndex);
+            const rowTopConnectionY = Math.min(
+              readSegmentConnectionY(segment.toRowIndex),
+              toY,
+            );
+            const path =
+              fromX === toX
+                ? `M ${fromX} ${fromY} L ${toX} ${toY}`
+                : `M ${fromX} ${fromY} L ${toX} ${rowTopConnectionY} L ${toX} ${toY}`;
+
+            return (
+              <path
+                key={`${segment.fromRowIndex}-${segment.toRowIndex}-${segment.fromLane}-${segment.toLane}-${segment.color}-${segment.isMergeSegment}`}
+                d={path}
+                fill="none"
+                stroke={segment.color}
+                strokeWidth={COMMIT_GRAPH_SEGMENT_STROKE_WIDTH}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          })}
 
       {graph.rows.map((row, rowIndex) => {
         const rowLayout = graphRowLayout.rowLayouts[rowIndex];
@@ -2448,11 +2509,7 @@ const CommitHistoryRow = ({
   updateBranchPointerDropTarget: (event: DragEvent<HTMLDivElement>) => void;
   clearBranchPointerDropTarget: (event: DragEvent<HTMLDivElement>) => void;
   finishBranchPointerDrop: (event: DragEvent<HTMLDivElement>) => void;
-  openRowContextMenu: (
-    event: MouseEvent<Element>,
-    row: CommitGraphRow,
-    copyMenuItem: CopyContextMenuItem | null,
-  ) => void;
+  openRowContextMenu: (event: MouseEvent<Element>, row: CommitGraphRow) => void;
   openRowAfterDoubleClick: () => void;
   openBranchCreateModal: (
     event: MouseEvent<HTMLButtonElement>,
@@ -2855,7 +2912,7 @@ const CommitHistoryRow = ({
         }),
       }}
       onDoubleClick={row.isCommitRow ? openRowAfterDoubleClick : undefined}
-      onContextMenu={(event) => openRowContextMenu(event, row, null)}
+      onContextMenu={(event) => openRowContextMenu(event, row)}
       onDragOver={updateBranchPointerDropTarget}
       onDragLeave={clearBranchPointerDropTarget}
       onDrop={finishBranchPointerDrop}
@@ -2985,6 +3042,12 @@ const CommitHistoryRow = ({
           </div>
         ) : null}
       </div>
+      <div className="commit-chats-cell">
+        <CommitThreadChatTags
+          threadGroups={threadGroups}
+          showErrorMessage={showErrorMessage}
+        />
+      </div>
       <div className="commit-code-cell">
         <CommitThreadCodeTags
           threadGroups={threadGroups}
@@ -2993,12 +3056,6 @@ const CommitHistoryRow = ({
           openCopyContextMenu={openCopyContextMenu}
           openCodePath={openCodePath}
           openTerminalPane={openTerminalPane}
-        />
-      </div>
-      <div className="commit-chats-cell">
-        <CommitThreadChatTags
-          threadGroups={threadGroups}
-          showErrorMessage={showErrorMessage}
         />
       </div>
       <div className={branchTagsCellClassName}>
@@ -3024,70 +3081,18 @@ const CommitHistoryRow = ({
           />
         ) : null}
       </div>
-      <div
-        className="commit-description-cell"
-        onContextMenu={
-          row.isCommitRow
-            ? (event) => {
-                openRowContextMenu(event, row, {
-                  itemName: "description",
-                  text: commit.subject,
-                  errorMessage: "Failed to copy description.",
-                });
-              }
-            : undefined
-        }
-      >
+      <div className="commit-description-cell">
         {row.isCommitRow ? (
           <span className="commit-subject">{commit.subject}</span>
         ) : null}
       </div>
-      <code
-        className="commit-hash-cell"
-        onContextMenu={
-          row.isCommitRow
-            ? (event) => {
-                openRowContextMenu(event, row, {
-                  itemName: "commit",
-                  text: commit.sha,
-                  errorMessage: "Failed to copy commit.",
-                });
-              }
-            : undefined
-        }
-      >
+      <code className="commit-hash-cell">
         {row.isCommitRow ? commit.shortSha : null}
       </code>
-      <div
-        className="commit-author-cell"
-        onContextMenu={
-          row.isCommitRow
-            ? (event) => {
-                openRowContextMenu(event, row, {
-                  itemName: "author",
-                  text: commit.author,
-                  errorMessage: "Failed to copy author.",
-                });
-              }
-            : undefined
-        }
-      >
+      <div className="commit-author-cell">
         {row.isCommitRow ? commit.author : null}
       </div>
-      <div
-        className="commit-date-cell"
-        onContextMenu={
-          row.isCommitRow
-            ? (event) => {
-                openRowContextMenu(event, row, {
-                  itemName: "date",
-                  text: commitDateText,
-                  errorMessage: "Failed to copy date.",
-                });
-              }
-            : undefined
-        }
-      >
+      <div className="commit-date-cell">
         {row.isCommitRow ? commitDateText : null}
       </div>
     </div>
@@ -4160,6 +4165,36 @@ const CommitChangesDialog = ({
   );
 };
 
+// Every pushed branch stays visible in the head dropdown; branches away from this commit are disabled instead of hidden.
+const readPullRequestHeadBranchOptions = (
+  gitPullRequestCreateTarget: GitPullRequestCreateTarget,
+) => {
+  const isAtCommitOfBranch: { [branch: string]: boolean } = {};
+  const isOptionAddedOfBranch: { [branch: string]: boolean } = {};
+  const options: { branch: string; isAtCommit: boolean }[] = [];
+
+  for (const branch of gitPullRequestCreateTarget.headBranches) {
+    isAtCommitOfBranch[branch] = true;
+  }
+
+  for (const branch of [
+    ...gitPullRequestCreateTarget.headBranches,
+    ...gitPullRequestCreateTarget.baseBranches,
+  ]) {
+    if (isOptionAddedOfBranch[branch] === true) {
+      continue;
+    }
+
+    isOptionAddedOfBranch[branch] = true;
+    options.push({
+      branch,
+      isAtCommit: isAtCommitOfBranch[branch] === true,
+    });
+  }
+
+  return options;
+};
+
 // This dialog gathers the GitHub PR fields while the main process validates the pushed refs again before creating it.
 const GitPullRequestCreateDialog = ({
   gitPullRequestCreateTarget,
@@ -4299,9 +4334,17 @@ const GitPullRequestCreateDialog = ({
                 value={headBranch}
                 onChange={(event) => setHeadBranch(event.target.value)}
               >
-                {gitPullRequestCreateTarget.headBranches.map((branch) => (
-                  <NativeSelectOption value={branch} key={branch}>
-                    {branch}
+                {readPullRequestHeadBranchOptions(
+                  gitPullRequestCreateTarget,
+                ).map((headBranchOption) => (
+                  <NativeSelectOption
+                    value={headBranchOption.branch}
+                    key={headBranchOption.branch}
+                    disabled={!headBranchOption.isAtCommit}
+                  >
+                    {headBranchOption.isAtCommit
+                      ? headBranchOption.branch
+                      : `${headBranchOption.branch} (not at this commit)`}
                   </NativeSelectOption>
                 ))}
               </NativeSelect>
@@ -5575,7 +5618,6 @@ const CommitHistory = ({
   const openRowContextMenu = (
     event: MouseEvent<Element>,
     row: CommitGraphRow,
-    copyMenuItem: CopyContextMenuItem | null,
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -5608,8 +5650,49 @@ const CommitHistory = ({
       };
     };
 
+    // Right-click shows every copy item for the row, no matter which cell was clicked.
+    const copyMenuItems: CopyContextMenuItem[] = row.isCommitRow
+      ? [
+          {
+            itemName: "description",
+            text: row.commit.subject,
+            errorMessage: "Failed to copy description.",
+          },
+          {
+            itemName: "commit",
+            text: row.commit.sha,
+            errorMessage: "Failed to copy commit.",
+          },
+          {
+            itemName: "author",
+            text: row.commit.author,
+            errorMessage: "Failed to copy author.",
+          },
+          {
+            itemName: "date",
+            text: formatCommitDate(row.commit.date),
+            errorMessage: "Failed to copy date.",
+          },
+        ]
+      : [
+          ...(row.threadGroup !== null && row.threadGroup.cwd.length > 0
+            ? [
+                {
+                  itemName: "path",
+                  text: row.threadGroup.cwd,
+                  errorMessage: "Failed to copy path.",
+                },
+              ]
+            : []),
+          {
+            itemName: "commit",
+            text: row.commit.sha,
+            errorMessage: "Failed to copy commit.",
+          },
+        ];
+
     setRowContextMenuTarget({
-      copyMenuItem,
+      copyMenuItems,
       sha: row.isCommitRow ? row.commit.sha : null,
       isEnabled: row.isCommitRow,
       pullRequestTarget: row.isCommitRow
@@ -5665,13 +5748,9 @@ const CommitHistory = ({
       errorMessage: copyMenuItem.errorMessage,
     });
   };
-  const copyRowContextMenuText = async (target: RowContextMenuTarget) => {
-    if (target.copyMenuItem === null) {
-      return;
-    }
-
+  const copyRowContextMenuText = async (copyMenuItem: CopyContextMenuItem) => {
     setRowContextMenuTarget(null);
-    await copyContextMenuItem(target.copyMenuItem);
+    await copyContextMenuItem(copyMenuItem);
   };
   const copyContextMenuText = async (target: CopyContextMenuTarget) => {
     setCopyContextMenuTarget(null);
@@ -6202,11 +6281,7 @@ const CommitHistory = ({
       },
     );
   };
-  const openRowAfterDoubleClick = async (row: CommitGraphRow) => {
-    if (!row.isCommitRow) {
-      return;
-    }
-
+  const switchHeadToRow = async (row: CommitGraphRow) => {
     const gitCheckoutDescription =
       row.commit.localBranches.length > 0
         ? "Switching branch"
@@ -6238,6 +6313,32 @@ const CommitHistory = ({
       },
     );
   };
+  const openRowAfterDoubleClick = (row: CommitGraphRow) => {
+    if (!row.isCommitRow) {
+      return;
+    }
+
+    const isHeadCommit = row.commit.refs.some((ref) => readIsHeadRef(ref));
+
+    // Double-clicking where HEAD already sits reports the truth instead of pretending to switch.
+    // A detached HEAD with a local branch at the same commit still goes through, because that reattaches.
+    if (
+      isHeadCommit &&
+      (currentBranch !== null || row.commit.localBranches.length === 0)
+    ) {
+      showInfoToast(
+        currentBranch === null
+          ? `Already on ${row.commit.shortSha}.`
+          : `Already on ${currentBranch}.`,
+      );
+      return;
+    }
+
+    setHeadMoveConfirmation({
+      row,
+      targetText: readHeadMoveTargetText({ row }),
+    });
+  };
   const moveHeadToConfirmationTarget = async () => {
     if (headMoveConfirmation === null) {
       return;
@@ -6245,7 +6346,7 @@ const CommitHistory = ({
 
     const request = headMoveConfirmation;
     closeHeadMoveConfirmationModal();
-    await openRowAfterDoubleClick(request.row);
+    await switchHeadToRow(request.row);
   };
 
   const branchPointerOperationText =
@@ -6283,20 +6384,23 @@ const CommitHistory = ({
             event.stopPropagation();
           }}
         >
-          {rowContextMenuTarget.copyMenuItem === null ? null : (
+          {rowContextMenuTarget.copyMenuItems.length === 0 ? null : (
             <>
-              <Button
-                className="context-menu-item"
-                variant="ghost"
-                size="sm"
-                type="button"
-                onClick={() => {
-                  void copyRowContextMenuText(rowContextMenuTarget);
-                }}
-              >
-                <Copy size={10} strokeWidth={1.75} />
-                <span>Copy {rowContextMenuTarget.copyMenuItem.itemName}</span>
-              </Button>
+              {rowContextMenuTarget.copyMenuItems.map((copyMenuItem) => (
+                <Button
+                  className="context-menu-item"
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  key={copyMenuItem.itemName}
+                  onClick={() => {
+                    void copyRowContextMenuText(copyMenuItem);
+                  }}
+                >
+                  <Copy size={10} strokeWidth={1.75} />
+                  <span>Copy {copyMenuItem.itemName}</span>
+                </Button>
+              ))}
               <div className="context-menu-separator" />
             </>
           )}
@@ -6450,15 +6554,6 @@ const CommitHistory = ({
                 finishColumnResize={finishColumnResize}
               />
             </div>
-            <div className="commit-history-header-cell">
-              <span>Code</span>
-              <CommitHistoryColumnResizeHandle
-                columnKey="code"
-                startColumnResize={startColumnResize}
-                updateColumnResize={updateColumnResize}
-                finishColumnResize={finishColumnResize}
-              />
-            </div>
             <div className="commit-history-header-cell commit-history-chats-title">
               <span>Chats</span>
               <TitleTooltip
@@ -6485,6 +6580,15 @@ const CommitHistory = ({
               </TitleTooltip>
               <CommitHistoryColumnResizeHandle
                 columnKey="chats"
+                startColumnResize={startColumnResize}
+                updateColumnResize={updateColumnResize}
+                finishColumnResize={finishColumnResize}
+              />
+            </div>
+            <div className="commit-history-header-cell">
+              <span>Code</span>
+              <CommitHistoryColumnResizeHandle
+                columnKey="code"
                 startColumnResize={startColumnResize}
                 updateColumnResize={updateColumnResize}
                 finishColumnResize={finishColumnResize}
@@ -6550,6 +6654,7 @@ const CommitHistory = ({
             <CommitGraphSvg
               graph={visibleGraphWithHeadDot}
               graphWidth={graphWidth}
+              shouldShowDotStubsOnly={shouldShowChatOnly}
             />
             {visibleGraphWithHeadDot.rows.map((row) => (
               <CommitHistoryRow
@@ -6945,13 +7050,28 @@ const BranchMasterDesktopApp = () => {
   >(null);
   const [branchSyncConfirmation, setBranchSyncConfirmation] =
     useState<BranchSyncConfirmation | null>(null);
+  const [repoSidebarContextMenu, setRepoSidebarContextMenu] = useState<{
+    repoRoot: string;
+    name: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [repoRemoveTarget, setRepoRemoveTarget] = useState<{
+    repoRoot: string;
+    name: string;
+  } | null>(null);
+  const [isRedetectingRepos, setIsRedetectingRepos] = useState(false);
+  const repoSidebarContextMenuRef = useRef<HTMLDivElement | null>(null);
+  // The saved repo list paints the sidebar immediately while the first full dashboard read is still running.
+  const [savedRepoRoots, setSavedRepoRoots] = useState<string[] | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isPrivateMode, setIsPrivateMode] = useState(
     readIsAnalyticsPrivateMode,
   );
+  // Detections start unknown so the settings modal never claims a provider is missing before the first read finishes.
   const [chatProviderDetections, setChatProviderDetections] = useState<
-    ChatProviderDetection[]
-  >(DEFAULT_CHAT_PROVIDER_DETECTIONS);
+    ChatProviderDetection[] | null
+  >(null);
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus>({
     type: "unavailable",
   });
@@ -7111,12 +7231,34 @@ const BranchMasterDesktopApp = () => {
     setLoadingRepoRootState(repoRoot);
   }, []);
   useEffect(() => {
-    if (dashboardData === null && dashboardErrorMessage === null) {
+    let didCancel = false;
+
+    void window.branchmaster
+      .readRepoList()
+      .then((repoRoots) => {
+        if (!didCancel) {
+          setSavedRepoRoots(repoRoots);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to read saved repositories.", error);
+      });
+
+    return () => {
+      didCancel = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (
+      dashboardData === null &&
+      dashboardErrorMessage === null &&
+      (savedRepoRoots === null || savedRepoRoots.length === 0)
+    ) {
       return;
     }
 
     document.getElementById("initial-loading-root")?.remove();
-  }, [dashboardData, dashboardErrorMessage]);
+  }, [dashboardData, dashboardErrorMessage, savedRepoRoots]);
   useEffect(() => {
     const dashboardPaintResolvers = dashboardPaintResolversRef.current;
 
@@ -7313,7 +7455,8 @@ const BranchMasterDesktopApp = () => {
     return () => {
       didCancel = true;
     };
-  }, []);
+    // Detections can change while the app is open, so reread them whenever the settings modal shows them.
+  }, [isSettingsModalOpen]);
   useEffect(() => {
     const stopWatchingChatThreadStatus =
       window.branchmaster.watchChatThreadStatus(
@@ -7354,7 +7497,7 @@ const BranchMasterDesktopApp = () => {
   }, []);
   const showSuccessMessage = useCallback((message: string) => {
     toast.success(message, {
-      closeButton: false,
+      closeButton: true,
       position: TOAST_POSITION,
     });
   }, []);
@@ -7367,6 +7510,44 @@ const BranchMasterDesktopApp = () => {
 
     showErrorToast({ title: "Error", description: userFacingMessage });
   }, []);
+  const fixGithubCredentials = useCallback(async () => {
+    try {
+      const gitHubCredentialSetupResult =
+        await window.branchmaster.setupGithubCredentialHelper();
+
+      switch (gitHubCredentialSetupResult.type) {
+        case "fixed":
+          // A fixed toast id keeps repeated clicks updating one toast instead of stacking copies.
+          toast.success("GitHub sign-in for Git is set up.", {
+            closeButton: true,
+            id: "github-credential-fix",
+            position: TOAST_POSITION,
+          });
+          await refreshDashboard();
+          return;
+        case "needsLogin":
+          showErrorToast({
+            title: "GitHub CLI is not signed in",
+            description:
+              'Run "gh auth login" in a terminal to sign in to GitHub, then click Fix again.',
+          });
+          return;
+        case "missingGhCli":
+          showErrorToast({
+            title: "GitHub CLI is not installed",
+            description:
+              "Install the GitHub CLI from https://cli.github.com, then click Fix again.",
+          });
+          return;
+      }
+    } catch (error) {
+      const message = readCaughtUserFacingErrorMessage({
+        error,
+        fallbackMessage: "Failed to set up GitHub sign-in.",
+      });
+      showErrorToast({ title: "Error", description: message });
+    }
+  }, [refreshDashboard]);
   // User Git updates use this wrapper so the loading toast is tied to action results, not background polling.
   const runUserGitUpdate = useCallback(
     async (
@@ -7490,11 +7671,35 @@ const BranchMasterDesktopApp = () => {
       }
 
       const toastId = `${DASHBOARD_WARNING_TOAST_ID_PREFIX}:${warning}`;
+      const isGithubCredentialWarning = warning.includes(
+        GITHUB_CREDENTIAL_FIX_COMMAND,
+      );
+
       dashboardWarningToastIdOfWarning[warning] = toast.warning(
         "Dashboard warning",
         {
           closeButton: true,
-          description: warning,
+          description: isGithubCredentialWarning ? (
+            <div className="github-credential-warning">
+              <div>{warning}</div>
+              <div>This is a private repo, so Git needs to log in.</div>
+              <div className="github-credential-warning-actions">
+                <Button
+                  size="xs"
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    void fixGithubCredentials();
+                  }}
+                >
+                  Fix
+                </Button>
+              </div>
+            </div>
+          ) : (
+            warning
+          ),
+          duration: DASHBOARD_WARNING_TOAST_DURATION_MS,
           id: toastId,
           onDismiss: () => {
             delete dashboardWarningToastIdOfWarning[warning];
@@ -7509,12 +7714,69 @@ const BranchMasterDesktopApp = () => {
           },
           onAutoClose: () => {
             delete dashboardWarningToastIdOfWarning[warning];
+
+            // An auto-closed warning that is still current stays suppressed, so it can't re-toast on every warning change.
+            if (
+              isCurrentDashboardWarningOfWarningRef.current[warning] === true
+            ) {
+              isDismissedDashboardWarningOfWarning[warning] = true;
+            }
           },
           position: TOAST_POSITION,
         },
       );
     }
-  }, [dashboardWarningsKey]);
+  }, [dashboardWarningsKey, fixGithubCredentials]);
+
+  useEffect(() => {
+    if (repoSidebarContextMenu === null) {
+      return;
+    }
+
+    const closeRepoSidebarContextMenu = () => {
+      setRepoSidebarContextMenu(null);
+    };
+    const closeRepoSidebarContextMenuAfterEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      closeRepoSidebarContextMenu();
+    };
+
+    window.addEventListener("mousedown", closeRepoSidebarContextMenu);
+    window.addEventListener("keydown", closeRepoSidebarContextMenuAfterEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", closeRepoSidebarContextMenu);
+      window.removeEventListener(
+        "keydown",
+        closeRepoSidebarContextMenuAfterEscape,
+      );
+    };
+  }, [repoSidebarContextMenu]);
+  useLayoutEffect(() => {
+    const contextMenu = repoSidebarContextMenuRef.current;
+
+    if (contextMenu === null) {
+      return;
+    }
+
+    // Keep the right-click menu inside the Electron window after React renders its real size.
+    const contextMenuRect = contextMenu.getBoundingClientRect();
+    const maxLeft =
+      window.innerWidth - contextMenuRect.width - CONTEXT_MENU_WINDOW_MARGIN;
+    const maxTop =
+      window.innerHeight - contextMenuRect.height - CONTEXT_MENU_WINDOW_MARGIN;
+    contextMenu.style.left = `${Math.max(
+      CONTEXT_MENU_WINDOW_MARGIN,
+      Math.min(contextMenuRect.left, maxLeft),
+    )}px`;
+    contextMenu.style.top = `${Math.max(
+      CONTEXT_MENU_WINDOW_MARGIN,
+      Math.min(contextMenuRect.top, maxTop),
+    )}px`;
+  }, [repoSidebarContextMenu]);
 
   const readVisibleBranchSyncChangesForRepo = (repoRoot: string) => {
     const repo =
@@ -7547,10 +7809,13 @@ const BranchMasterDesktopApp = () => {
     }
 
     const { action, repoRoot } = branchSyncConfirmation;
-    const branchSyncActionText = readBranchSyncActionText(action);
     const changes = readActionableBranchSyncChanges({
       action,
       branchSyncChanges: readVisibleBranchSyncChangesForRepo(repoRoot),
+    });
+    const branchSyncActionText = readBranchSyncActionText({
+      action,
+      branchSyncChanges: changes,
     });
 
     if (changes.length === 0) {
@@ -7629,7 +7894,21 @@ const BranchMasterDesktopApp = () => {
   const branchSyncActionText =
     branchSyncConfirmation === null
       ? null
-      : readBranchSyncActionText(branchSyncConfirmation.action);
+      : readBranchSyncActionText({
+          action: branchSyncConfirmation.action,
+          branchSyncChanges: branchSyncChangesInConfirmation,
+        });
+
+  const changeSelectedRepoRoot = (repoRoot: string) => {
+    if (dashboardData !== null && repoRoot === selectedRepo?.root) {
+      return;
+    }
+
+    selectRepoRoot(repoRoot);
+    setLoadingRepoRoot(repoRoot);
+    void refreshDashboardForRepoRoot(repoRoot);
+    trackDesktopAction({ eventName: "repo_selected", properties: {} });
+  };
 
   if (dashboardData === null) {
     if (dashboardErrorMessage !== null) {
@@ -7660,6 +7939,68 @@ const BranchMasterDesktopApp = () => {
       );
     }
 
+    // The saved list paints the sidebar right away; the selected repo shows its loading state until the first read lands.
+    if (savedRepoRoots !== null && savedRepoRoots.length > 0) {
+      const preloadSelectedRepoRoot = selectedRepoRoot ?? savedRepoRoots[0];
+
+      return (
+        <TooltipProvider>
+          <main className="app-shell">
+            <div className="content-shell">
+              <aside className="repo-sidebar" aria-label="Repositories">
+                <div className="repo-sidebar-header">
+                  <span>Repositories</span>
+                </div>
+                <div className="repo-sidebar-list">
+                  {savedRepoRoots.map((repoRoot) => (
+                    <div
+                      className={cn(
+                        "repo-sidebar-item",
+                        preloadSelectedRepoRoot === repoRoot &&
+                          "repo-sidebar-item-selected",
+                      )}
+                      key={repoRoot}
+                    >
+                      <button
+                        className="repo-sidebar-item-button"
+                        type="button"
+                        title={repoRoot}
+                        onClick={() => changeSelectedRepoRoot(repoRoot)}
+                      >
+                        {readRepoRootFolderName(repoRoot)}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </aside>
+              <div className="repo-list">
+                <section className="repo-section">
+                  <div className="repo-panel">
+                    <div className="repo-context-loading-screen">
+                      <div className="initial-loading-content">
+                        <div
+                          className="initial-loading-image"
+                          aria-hidden="true"
+                        />
+                        <div className="initial-loading-status">
+                          <span
+                            className="initial-loading-spinner"
+                            aria-hidden="true"
+                          />
+                          <span>Loading repository...</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </main>
+          <Toaster />
+        </TooltipProvider>
+      );
+    }
+
     return <Toaster />;
   }
   const openSelectedRepoPath = async () => {
@@ -7682,33 +8023,114 @@ const BranchMasterDesktopApp = () => {
       showErrorMessage(message);
     }
   };
-  const openSelectedRepoChatProviderPath = async () => {
-    if (selectedRepo === null) {
+  const addRepoFromDialog = async () => {
+    try {
+      const addedRepoRoot = await window.branchmaster.addRepoFromDialog();
+
+      if (addedRepoRoot === null) {
+        return;
+      }
+
+      trackDesktopAction({ eventName: "repo_added", properties: {} });
+      changeSelectedRepoRoot(addedRepoRoot);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to add repository.";
+      showErrorMessage(message);
+    }
+  };
+  const removeRepoFromSidebar = async (repoRoot: string) => {
+    try {
+      await window.branchmaster.removeRepo(repoRoot);
+      trackDesktopAction({ eventName: "repo_removed", properties: {} });
+      await refreshDashboard();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to remove repository.";
+      showErrorMessage(message);
+    }
+  };
+  const openRepoSidebarContextMenu = (
+    event: MouseEvent<Element>,
+    repo: RepoGraph,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setRepoSidebarContextMenu({
+      repoRoot: repo.root,
+      name: readRepoFolderName(repo),
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+  const openRepoFromSidebarContextMenu = async (repoRoot: string) => {
+    setRepoSidebarContextMenu(null);
+
+    try {
+      await window.branchmaster.openPath({
+        path: repoRoot,
+        launcher: pathLauncher,
+      });
+      trackDesktopAction({
+        eventName: "repo_opened",
+        properties: { launcher: pathLauncher, source: "sidebar" },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to open repo.";
+      showErrorMessage(message);
+    }
+  };
+  const confirmRemoveRepoFromSidebar = () => {
+    if (repoRemoveTarget === null) {
       return;
     }
 
+    const removeTarget = repoRemoveTarget;
+    setRepoRemoveTarget(null);
+    void removeRepoFromSidebar(removeTarget.repoRoot);
+  };
+  const redetectChatProviderRepos = async () => {
+    if (isRedetectingRepos) {
+      return;
+    }
+
+    setIsRedetectingRepos(true);
+
     try {
-      await window.branchmaster.openChatProviderPath({
-        providerId: chatProviderLauncher,
-        path: selectedRepo.root,
-      });
+      const knownRepoRootOfRoot: { [repoRoot: string]: boolean } = {};
+
+      for (const repo of dashboardData.repos) {
+        knownRepoRootOfRoot[repo.root] = true;
+      }
+
+      const detectedRepoRoots =
+        await window.branchmaster.redetectChatProviderRepos();
+      const addedRepoRoots = detectedRepoRoots.filter(
+        (repoRoot) => knownRepoRootOfRoot[repoRoot] !== true,
+      );
+
       trackDesktopAction({
-        eventName: "chat_provider_repo_opened",
-        properties: { provider: chatProviderLauncher, source: "header" },
+        eventName: "repos_redetected",
+        properties: { repo_count: detectedRepoRoots.length },
       });
+      await refreshDashboard();
+      showSuccessMessage(
+        addedRepoRoots.length === 0
+          ? "No new repositories found."
+          : addedRepoRoots.length === 1
+            ? "Added 1 repository."
+            : `Added ${addedRepoRoots.length} repositories.`,
+      );
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Failed to open repo in chat provider.";
+          : "Failed to detect repositories.";
       showErrorMessage(message);
+    } finally {
+      setIsRedetectingRepos(false);
     }
-  };
-  const changeSelectedRepoRoot = (repoRoot: string) => {
-    selectRepoRoot(repoRoot);
-    setLoadingRepoRoot(repoRoot);
-    void refreshDashboardForRepoRoot(repoRoot);
-    trackDesktopAction({ eventName: "repo_selected", properties: {} });
   };
   const changePathLauncher = (value: string) => {
     const nextPathLauncher = readPathLauncher(value);
@@ -7792,30 +8214,13 @@ const BranchMasterDesktopApp = () => {
       ? "BranchMaster found chats, but Git could not read their folders. " +
         "They may be deleted, moved, not valid Git worktrees, or blocked by macOS permissions."
       : "No Git repositories found from detected chat sources.";
-  const chatProviderLauncherLabel = readChatProviderLabel(chatProviderLauncher);
   const repoHeaderControls = (
     <>
-      {dashboardData.repos.length === 0 ? null : (
+      {selectedRepo === null ? null : (
         <div className="repo-picker">
-          <Select
-            value={selectedRepo?.root ?? ""}
-            onValueChange={changeSelectedRepoRoot}
-          >
-            <SelectTrigger
-              className="repo-picker-select"
-              id="repo-picker-select"
-              size="sm"
-            >
-              <SelectValue placeholder="Select repo" />
-            </SelectTrigger>
-            <SelectContent align="end" className="repo-picker-select-content">
-              {dashboardData.repos.map((repo) => (
-                <SelectItem value={repo.root} key={repo.root}>
-                  {readRepoFolderName(repo)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <span className="repo-header-name" title={selectedRepo.root}>
+            {readRepoFolderName(selectedRepo)}
+          </span>
         </div>
       )}
       <div className="repo-header-controls">
@@ -7843,17 +8248,6 @@ const BranchMasterDesktopApp = () => {
           </Select>
         </div>
         <div className="chat-provider-launcher-control">
-          <button
-            aria-label={`Open selected repo in ${chatProviderLauncherLabel}`}
-            className="chat-provider-launcher-open"
-            type="button"
-            disabled={selectedRepo === null}
-            onClick={() => {
-              void openSelectedRepoChatProviderPath();
-            }}
-          >
-            <ChatProviderLauncherIcon providerId={chatProviderLauncher} />
-          </button>
           <Select
             value={chatProviderLauncher}
             onValueChange={changeChatProviderLauncher}
@@ -7862,7 +8256,9 @@ const BranchMasterDesktopApp = () => {
               aria-label="Choose app for opening chat projects"
               className="chat-provider-launcher-select"
               size="sm"
-            />
+            >
+              <ChatProviderLauncherIcon providerId={chatProviderLauncher} />
+            </SelectTrigger>
             <SelectContent
               align="end"
               className="chat-provider-launcher-select-content"
@@ -7937,6 +8333,68 @@ const BranchMasterDesktopApp = () => {
   return (
     <TooltipProvider>
       <main className="app-shell">
+        {repoSidebarContextMenu === null ? null : (
+          <div
+            ref={repoSidebarContextMenuRef}
+            className="context-menu"
+            style={{
+              left: repoSidebarContextMenu.x,
+              top: repoSidebarContextMenu.y,
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <Button
+              className="context-menu-item"
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => {
+                void openRepoFromSidebarContextMenu(
+                  repoSidebarContextMenu.repoRoot,
+                );
+              }}
+            >
+              <FolderOpen size={10} strokeWidth={1.75} />
+              <span>Open in {readPathLauncherLabel(pathLauncher)}</span>
+            </Button>
+            <div className="context-menu-separator" />
+            <Button
+              className="context-menu-item"
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => {
+                setRepoRemoveTarget({
+                  repoRoot: repoSidebarContextMenu.repoRoot,
+                  name: repoSidebarContextMenu.name,
+                });
+                setRepoSidebarContextMenu(null);
+              }}
+            >
+              <Trash2 size={10} strokeWidth={1.75} />
+              <span>Remove from sidebar</span>
+            </Button>
+          </div>
+        )}
+        <ConfirmationDialog
+          isOpen={repoRemoveTarget !== null}
+          closeConfirmationDialog={() => setRepoRemoveTarget(null)}
+          title="Remove Repository"
+          description={
+            repoRemoveTarget === null
+              ? ""
+              : `Remove ${repoRemoveTarget.name} from the sidebar? The folder on disk is not touched.`
+          }
+          confirmButtonText="Remove"
+          confirmButtonVariant="destructive"
+          isConfirmDisabled={false}
+          confirmButtonAction={confirmRemoveRepoFromSidebar}
+          children={undefined}
+        />
         <ConfirmationDialog
           isOpen={branchSyncConfirmation !== null}
           closeConfirmationDialog={closeBranchSyncModal}
@@ -8038,19 +8496,29 @@ const BranchMasterDesktopApp = () => {
             <section className="chat-provider-detection-section">
               <h3 className="chat-provider-detection-title">Chat Sources</h3>
               <div className="chat-provider-detection-list">
-                {chatProviderDetections.map((chatProviderDetection) => (
-                  <div
-                    className="chat-provider-detection-row"
-                    key={chatProviderDetection.providerId}
-                  >
+                {chatProviderDetections === null ? (
+                  <div className="chat-provider-detection-row">
                     <span className="chat-provider-detection-label">
-                      {readChatProviderLabel(chatProviderDetection.providerId)}
+                      Checking...
                     </span>
-                    <ChatProviderDetectionStatus
-                      isDetected={chatProviderDetection.isDetected}
-                    />
                   </div>
-                ))}
+                ) : (
+                  chatProviderDetections.map((chatProviderDetection) => (
+                    <div
+                      className="chat-provider-detection-row"
+                      key={chatProviderDetection.providerId}
+                    >
+                      <span className="chat-provider-detection-label">
+                        {readChatProviderLabel(
+                          chatProviderDetection.providerId,
+                        )}
+                      </span>
+                      <ChatProviderDetectionStatus
+                        isDetected={chatProviderDetection.isDetected}
+                      />
+                    </div>
+                  ))
+                )}
               </div>
             </section>
             <dl className="settings-modal-fields">
@@ -8082,6 +8550,78 @@ const BranchMasterDesktopApp = () => {
         </Dialog>
 
         <div className="content-shell">
+          <aside className="repo-sidebar" aria-label="Repositories">
+            <div className="repo-sidebar-header">
+              <span>Repositories</span>
+              <span className="repo-sidebar-header-actions">
+                <TitleTooltip title="Detect repositories from Codex and OpenCode">
+                  <Button
+                    aria-label="Detect repositories"
+                    className="repo-sidebar-redetect"
+                    variant="ghost"
+                    size="icon-xs"
+                    type="button"
+                    disabled={isRedetectingRepos}
+                    onClick={() => {
+                      void redetectChatProviderRepos();
+                    }}
+                  >
+                    <RefreshCw
+                      aria-hidden="true"
+                      className={
+                        isRedetectingRepos
+                          ? "repo-sidebar-redetect-spinning"
+                          : undefined
+                      }
+                      size={12}
+                      strokeWidth={2}
+                    />
+                  </Button>
+                </TitleTooltip>
+                <TitleTooltip title="Add repository">
+                  <Button
+                    aria-label="Add repository"
+                    className="repo-sidebar-add"
+                    variant="ghost"
+                    size="icon-xs"
+                    type="button"
+                    onClick={() => {
+                      void addRepoFromDialog();
+                    }}
+                  >
+                    <Plus aria-hidden="true" size={13} strokeWidth={2.25} />
+                  </Button>
+                </TitleTooltip>
+              </span>
+            </div>
+            <div className="repo-sidebar-list">
+              {dashboardData.repos.map((repo) => (
+                <div
+                  className={cn(
+                    "repo-sidebar-item",
+                    selectedRepo?.root === repo.root &&
+                      "repo-sidebar-item-selected",
+                  )}
+                  key={repo.root}
+                  onContextMenu={(event) =>
+                    openRepoSidebarContextMenu(event, repo)
+                  }
+                >
+                  <button
+                    className="repo-sidebar-item-button"
+                    type="button"
+                    title={repo.root}
+                    onClick={() => changeSelectedRepoRoot(repo.root)}
+                  >
+                    {readRepoFolderName(repo)}
+                  </button>
+                </div>
+              ))}
+              {dashboardData.repos.length === 0 ? (
+                <p className="repo-sidebar-empty">No repositories yet.</p>
+              ) : null}
+            </div>
+          </aside>
           <div className="repo-list">
             {isSelectedRepoContextLoading ? (
               <section className="repo-section">

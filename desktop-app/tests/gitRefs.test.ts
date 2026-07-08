@@ -17,7 +17,7 @@ test("creates a lowercase branch name from a chat title", () => {
       fallbackTitle: "thread-1",
       isBranchNameUsedOfBranch: {},
     }),
-    "branchmaster/fix-branch-button",
+    "fix-branch-button",
   );
 });
 
@@ -27,11 +27,11 @@ test("adds a branch number when the chat branch name already exists", () => {
       title: "Fix Branch Button",
       fallbackTitle: "thread-1",
       isBranchNameUsedOfBranch: {
-        "branchmaster/fix-branch-button": true,
-        "branchmaster/fix-branch-button-2": true,
+        "fix-branch-button": true,
+        "fix-branch-button-2": true,
       },
     }),
-    "branchmaster/fix-branch-button-3",
+    "fix-branch-button-3",
   );
 });
 
@@ -42,7 +42,7 @@ test("uses the fallback title when the chat title has no branch-safe characters"
       fallbackTitle: "thread-abc-123",
       isBranchNameUsedOfBranch: {},
     }),
-    "branchmaster/thread-abc-123",
+    "thread-abc-123",
   );
 });
 
@@ -52,17 +52,7 @@ test("creates a commit message from an existing branch name", () => {
       branch: "feature",
       isCommitMessageUsedOfMessage: {},
     }),
-    "branchmaster/feature",
-  );
-});
-
-test("does not double-prefix branchmaster branch names for commit messages", () => {
-  assert.equal(
-    readAutomaticCommitMessage({
-      branch: "branchmaster/feature",
-      isCommitMessageUsedOfMessage: {},
-    }),
-    "branchmaster/feature",
+    "feature",
   );
 });
 
@@ -71,10 +61,10 @@ test("adds a commit message number when that commit message already exists", () 
     readAutomaticCommitMessage({
       branch: "feature",
       isCommitMessageUsedOfMessage: {
-        "branchmaster/feature": true,
-        "branchmaster/feature-2": true,
+        feature: true,
+        "feature-2": true,
       },
     }),
-    "branchmaster/feature-3",
+    "feature-3",
   );
 });

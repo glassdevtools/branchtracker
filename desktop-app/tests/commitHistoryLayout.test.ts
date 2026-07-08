@@ -47,10 +47,10 @@ test("sizes multi-line commit rows from stacked line height", () => {
   });
 });
 
-test("puts chats between code actions and branches", () => {
+test("puts chats between the graph and code actions", () => {
   assert.equal(
     readCommitGridTemplateColumns(columnWidths),
-    "300px 50px 70px 240px 294px 84px 150px 170px",
+    "300px 70px 50px 240px 294px 84px 150px 170px",
   );
 });
 

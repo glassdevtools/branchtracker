@@ -10,9 +10,13 @@ import {
 export const readDashboardData = async ({
   chatProviderDashboardData,
   focusedRepoRoot,
+  pinnedRepoRoots,
+  shouldLimitToPinnedRepoRoots,
 }: {
   chatProviderDashboardData: ChatProviderDashboardData[];
   focusedRepoRoot: string | null;
+  pinnedRepoRoots: string[];
+  shouldLimitToPinnedRepoRoots: boolean;
 }) => {
   const threads = chatProviderDashboardData.flatMap(
     (providerData) => providerData.threads,
@@ -27,6 +31,8 @@ export const readDashboardData = async ({
     threads,
     repoFolders,
     focusedRepoRoot,
+    pinnedRepoRoots,
+    shouldLimitToPinnedRepoRoots,
   });
   const gitChangeResult = await readGitChangesOfCwdForRepoRoots({
     threads,

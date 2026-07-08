@@ -198,8 +198,7 @@ textarea,
   color: #343a43;
 }
 
-.path-launcher-open,
-.chat-provider-launcher-open {
+.path-launcher-open {
   width: 34px;
   height: 100%;
   display: inline-flex;
@@ -211,13 +210,11 @@ textarea,
   background: #ffffff;
 }
 
-.path-launcher-open:not(:disabled):hover,
-.chat-provider-launcher-open:not(:disabled):hover {
+.path-launcher-open:not(:disabled):hover {
   background: #ffffff;
 }
 
-.path-launcher-open:disabled,
-.chat-provider-launcher-open:disabled {
+.path-launcher-open:disabled {
   cursor: default;
   opacity: 0.46;
 }
@@ -225,8 +222,8 @@ textarea,
 .path-launcher-open .path-launcher-icon,
 .path-launcher-open .path-launcher-icon-image,
 .path-launcher-open .path-launcher-icon svg,
-.chat-provider-launcher-open .chat-provider-launcher-icon,
-.chat-provider-launcher-open .chat-provider-launcher-icon-image {
+.chat-provider-launcher-select .chat-provider-launcher-icon,
+.chat-provider-launcher-select .chat-provider-launcher-icon-image {
   width: 16px;
   height: 16px;
 }
@@ -241,6 +238,13 @@ textarea,
   border-radius: 0;
   background: #ffffff;
   box-shadow: none;
+}
+
+/* The chat launcher is a plain dropdown, so its trigger holds the provider icon next to the chevron. */
+.chat-provider-launcher-select {
+  width: auto;
+  gap: 5px;
+  padding: 0 7px 0 9px;
 }
 
 .path-launcher-select:hover,
@@ -320,6 +324,18 @@ textarea,
   display: block;
 }
 
+.github-credential-warning {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.github-credential-warning-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .toast-status-icon-success {
   color: var(--success-text);
 }
@@ -351,8 +367,9 @@ textarea,
   color: inherit;
 }
 
-[data-sonner-toast][data-type="error"] [data-title],
-[data-sonner-toast][data-type="error"] [data-description] {
+/* Toast text stays selectable so users can copy paths, shas, and error details from any toast type. */
+[data-sonner-toast] [data-title],
+[data-sonner-toast] [data-description] {
   cursor: text;
   user-select: text;
 }
@@ -443,8 +460,105 @@ textarea,
   min-height: 0;
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
+}
+
+.repo-sidebar {
+  /* TODO: AI-PICKED-VALUE: This width fits typical repo folder names without crowding the commit table. */
+  width: 200px;
+  min-width: 200px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #d9dee6;
+  background: #f9fafb;
+}
+
+.repo-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px 6px 14px;
+  color: #5f6670;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.repo-sidebar-list {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+
+.repo-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+}
+
+.repo-sidebar-item:hover {
+  background: #eef1f4;
+}
+
+.repo-sidebar-item-selected,
+.repo-sidebar-item-selected:hover {
+  background: #e6ebf1;
+}
+
+.repo-sidebar-item-button {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 4px 6px 8px;
+  border: 0;
+  background: transparent;
+  color: #374151;
+  font-size: 13px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-sidebar-item-selected .repo-sidebar-item-button {
+  color: #111827;
+  font-weight: 650;
+}
+
+.repo-sidebar-empty {
+  padding: 6px 8px;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.repo-sidebar-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.repo-sidebar-redetect,
+.repo-sidebar-add {
+  color: #6b7280;
+}
+
+.repo-sidebar-redetect-spinning {
+  animation: initial-loading-spin 900ms linear infinite;
+}
+
+.repo-header-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .repo-list {
@@ -662,7 +776,7 @@ textarea,
 }
 
 .commit-history {
-  --commit-history-grid-template-columns: 300px 54px 70px 240px 420px 84px 150px
+  --commit-history-grid-template-columns: 300px 70px 54px 240px 420px 84px 150px
     170px;
   --commit-history-table-width: 1488px;
   min-height: 0;
@@ -670,6 +784,8 @@ textarea,
   overflow: hidden;
   overflow-anchor: none;
   border: 1px solid #d9dee6;
+  /* The sidebar's right border already separates this edge, so a left border would draw a double line. */
+  border-left: 0;
   border-radius: 0;
   background: #ffffff;
 }

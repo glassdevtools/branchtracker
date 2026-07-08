@@ -37,6 +37,7 @@ import {
 import { readDashboardDataAfterGitMutation } from "../src/main/dashboard";
 import {
   readGitChangesOfCwd,
+  readOriginFetchWarning,
   readRepoGraphs,
   readRepoGraphsForRepoRoots,
   readRepoGraphsWithRepoFolders,
@@ -339,6 +340,8 @@ test("reads repo graphs from project folders without Codex threads", async () =>
         threads: [],
         repoFolders: [{ providerId: "openCode", path: repoRoot }],
         focusedRepoRoot: null,
+        pinnedRepoRoots: [],
+        shouldLimitToPinnedRepoRoots: false,
       });
     const repo = repos[0];
 
@@ -429,6 +432,8 @@ test("uses cloud agent git info instead of reporting nonlocal cwd errors", async
       ],
       repoFolders: [{ providerId: "openCode", path: repoRoot }],
       focusedRepoRoot: null,
+      pinnedRepoRoots: [],
+      shouldLimitToPinnedRepoRoots: false,
     });
     const repo = repos[0];
     const featureCommit = repo?.commits.find(
@@ -456,6 +461,8 @@ test("merges project folders with Codex thread folders for the same repo", async
       threads: [createThread({ id: "thread", cwd: threadCwd })],
       repoFolders: [{ providerId: "openCode", path: repoRoot }],
       focusedRepoRoot: null,
+      pinnedRepoRoots: [],
+      shouldLimitToPinnedRepoRoots: false,
     });
 
     assert.equal(warnings.length, 0);
@@ -767,6 +774,28 @@ test("reads local branches as branch sync changes when origin tracking refs are 
       },
     ]);
   });
+});
+
+test("origin fetch warnings point GitHub credential failures at the CLI fix", () => {
+  const githubWarning = readOriginFetchWarning({
+    repoRoot: "/repo",
+    message:
+      "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+  });
+  const sshWarning = readOriginFetchWarning({
+    repoRoot: "/repo",
+    message: "git@gitlab.com: Permission denied (publickey).",
+  });
+  const offlineWarning = readOriginFetchWarning({
+    repoRoot: "/repo",
+    message: "fatal: unable to access remote repository",
+  });
+
+  assert.match(githubWarning, /gh auth setup-git/);
+  assert.doesNotMatch(sshWarning, /gh auth setup-git/);
+  assert.match(sshWarning, /credential helper or SSH key/);
+  assert.doesNotMatch(offlineWarning, /gh auth setup-git/);
+  assert.match(offlineWarning, /Failed to fetch origin/);
 });
 
 test("reads the remote default branch when origin head tracking ref is missing", async () => {
@@ -1362,7 +1391,7 @@ test("stages and unstages all changes in a repo path", async () => {
   });
 });
 
-test("commits all changes and advances colocated local branch tags", async () => {
+test("keeps colocated branches parked when committing on a checked-out branch", async () => {
   await withRepo(async ({ repoRoot }) => {
     const oldSha = await commitRepoFile({
       repoRoot,
@@ -1385,10 +1414,55 @@ test("commits all changes and advances colocated local branch tags", async () =>
     assert.equal(await readSha({ cwd: repoRoot, ref: "HEAD" }), newSha);
     assert.equal(
       await readSha({ cwd: repoRoot, ref: "refs/heads/topic" }),
-      newSha,
+      oldSha,
     );
     assert.equal(
       await runGit({ cwd: repoRoot, args: ["rev-parse", `${newSha}^`] }),
+      oldSha,
+    );
+  });
+});
+
+test("advances colocated branches except the default branch after a detached HEAD commit", async () => {
+  await withRepo(async ({ repoRoot }) => {
+    const oldSha = await commitRepoFile({
+      repoRoot,
+      filePath: "file.txt",
+      content: "one\n",
+      message: "initial",
+    });
+    await runGit({ cwd: repoRoot, args: ["branch", "session", oldSha] });
+    await runGit({
+      cwd: repoRoot,
+      args: ["update-ref", "refs/remotes/origin/main", oldSha],
+    });
+    await runGit({
+      cwd: repoRoot,
+      args: [
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+      ],
+    });
+    await runGit({ cwd: repoRoot, args: ["switch", "--detach", oldSha] });
+    await appendRepoFile({
+      repoRoot,
+      filePath: "file.txt",
+      content: "two\n",
+    });
+
+    const newSha = await commitAllGitChanges({
+      path: repoRoot,
+      message: "second",
+    });
+
+    assert.equal(await readSha({ cwd: repoRoot, ref: "HEAD" }), newSha);
+    assert.equal(
+      await readSha({ cwd: repoRoot, ref: "refs/heads/session" }),
+      newSha,
+    );
+    assert.equal(
+      await readSha({ cwd: repoRoot, ref: "refs/heads/main" }),
       oldSha,
     );
   });

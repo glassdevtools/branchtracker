@@ -38,12 +38,21 @@ test("readOrCreateAnalyticsInstallId creates and reuses a random install ID", as
   });
 });
 
-test("readOrCreateAnalyticsInstallId rejects an invalid stored install ID", async () => {
+test("readOrCreateAnalyticsInstallId replaces an invalid stored install ID", async () => {
   await withUserDataPath(async (userDataPath) => {
     await writeFile(join(userDataPath, "analytics-install-id"), "not-a-uuid\n");
 
-    await assert.rejects(async () => {
-      await readOrCreateAnalyticsInstallId({ userDataPath });
-    }, /Stored analytics install ID is invalid/);
+    const analyticsInstallId = await readOrCreateAnalyticsInstallId({
+      userDataPath,
+    });
+    const storedAnalyticsInstallId = (
+      await readFile(join(userDataPath, "analytics-install-id"), "utf8")
+    ).trim();
+
+    assert.match(
+      analyticsInstallId,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    assert.equal(storedAnalyticsInstallId, analyticsInstallId);
   });
 });

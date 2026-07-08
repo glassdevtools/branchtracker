@@ -10,10 +10,12 @@ import type {
   GitWorktree,
   RepoGraph,
 } from "../shared/types";
+import { GITHUB_CREDENTIAL_FIX_COMMAND } from "../shared/types";
 import {
   readChatProviderProjectFolderDescription,
   readChatProviderThreadFolderDescription,
 } from "./chatProviders";
+import { GIT_UNSAFE_ALLOWANCES, readGitProcessEnv } from "./gitEnv";
 
 // Git is the source of truth for graph structure. Chat sources only tell us which thread belongs near a branch, commit, or worktree.
 const COMMIT_READ_LIMIT = 2000;
@@ -29,6 +31,7 @@ const UNTRACKED_FILE_READ_CHUNK_BYTE_COUNT = 64 * 1024;
 const FIELD_SEPARATOR = "\u001f";
 const ZERO_SHA = "0000000000000000000000000000000000000000";
 const lastOriginFetchAttemptTimeOfRepoRoot: { [repoRoot: string]: number } = {};
+const lastOriginFetchWarningOfRepoRoot: { [repoRoot: string]: string } = {};
 const defaultBranchCacheOfRepoRoot: {
   [repoRoot: string]: { branch: string | null; readTime: number };
 } = {};
@@ -98,8 +101,9 @@ const runGit = async ({ cwd, args }: { cwd: string; args: string[] }) => {
   const stdout = await simpleGit({
     baseDir: cwd,
     timeout: { block: GIT_COMMAND_TIMEOUT_MS },
+    unsafe: GIT_UNSAFE_ALLOWANCES,
   })
-    .env("GIT_TERMINAL_PROMPT", "0")
+    .env(readGitProcessEnv())
     .raw(args);
 
   return { stdout };
@@ -771,17 +775,25 @@ const readGitStatusChangeCounts = async ({ cwd }: { cwd: string }) => {
     }
 
     const path = join(repoRoot, untrackedPath);
-    const pathStat = await stat(path);
 
-    if (!pathStat.isFile()) {
+    // Untracked files can disappear between the status read and this read, so a missing file only skips its own counts.
+    try {
+      const pathStat = await stat(path);
+
+      if (!pathStat.isFile()) {
+        continue;
+      }
+
+      const fileAddedLineCount = await readFileAddedLineCount({
+        path,
+        maxAddedLineCount: MAX_UNTRACKED_ADDED_LINE_COUNT - addedLineCount,
+      });
+
+      changedFileCount += 1;
+      addedLineCount += fileAddedLineCount;
+    } catch {
       continue;
     }
-
-    changedFileCount += 1;
-    addedLineCount += await readFileAddedLineCount({
-      path,
-      maxAddedLineCount: MAX_UNTRACKED_ADDED_LINE_COUNT - addedLineCount,
-    });
   }
 
   return {
@@ -1074,6 +1086,51 @@ const fetchMissingOriginTags = async ({ repoSeed }: { repoSeed: RepoSeed }) => {
   });
 };
 
+// Credential failures get their own message because the fix is on the user's machine, not inside the app.
+export const readOriginFetchWarning = ({
+  repoRoot,
+  message,
+}: {
+  repoRoot: string;
+  message: string;
+}) => {
+  const isHttpsCredentialFailure =
+    message.includes("could not read Username") ||
+    message.includes("could not read Password") ||
+    message.includes("Authentication failed");
+  const isSshKeyFailure = message.includes("Permission denied (publickey)");
+
+  // The GitHub CLI fix only helps HTTPS GitHub remotes, so SSH and other hosts get the generic advice.
+  if (isHttpsCredentialFailure && message.includes("github.com")) {
+    return (
+      `${repoRoot}: Git can't sign in to GitHub, so fetch, push, and sync won't work for this repo. ` +
+      `To fix it in a terminal, run "${GITHUB_CREDENTIAL_FIX_COMMAND}". ` +
+      `${message}`
+    );
+  }
+
+  if (isHttpsCredentialFailure || isSshKeyFailure) {
+    return (
+      `${repoRoot}: Git can't sign in to origin, so fetch, push, and sync won't work for this repo. ` +
+      `Set up a Git credential helper or SSH key for this remote. ` +
+      `${message}`
+    );
+  }
+
+  return `${repoRoot}: Failed to fetch origin. Sync state may be stale. ${message}`;
+};
+
+// After credentials change, the next dashboard read should retry origin fetches instead of waiting out the throttle.
+export const resetOriginFetchThrottle = () => {
+  for (const repoRoot of Object.keys(lastOriginFetchAttemptTimeOfRepoRoot)) {
+    delete lastOriginFetchAttemptTimeOfRepoRoot[repoRoot];
+  }
+
+  for (const repoRoot of Object.keys(lastOriginFetchWarningOfRepoRoot)) {
+    delete lastOriginFetchWarningOfRepoRoot[repoRoot];
+  }
+};
+
 const fetchOriginRefs = async ({ repoSeed }: { repoSeed: RepoSeed }) => {
   if (repoSeed.originUrl === null) {
     return null;
@@ -1087,7 +1144,8 @@ const fetchOriginRefs = async ({ repoSeed }: { repoSeed: RepoSeed }) => {
     lastOriginFetchAttemptTime !== undefined &&
     now - lastOriginFetchAttemptTime < ORIGIN_FETCH_INTERVAL_MS
   ) {
-    return null;
+    // The last failure keeps reporting between throttled attempts, so its warning holds steady instead of flashing once per attempt.
+    return lastOriginFetchWarningOfRepoRoot[repoSeed.root] ?? null;
   }
 
   lastOriginFetchAttemptTimeOfRepoRoot[repoSeed.root] = now;
@@ -1099,11 +1157,16 @@ const fetchOriginRefs = async ({ repoSeed }: { repoSeed: RepoSeed }) => {
     });
     await fetchMissingOriginTags({ repoSeed });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown Git error.";
+    const warning = readOriginFetchWarning({
+      repoRoot: repoSeed.root,
+      message: error instanceof Error ? error.message : "Unknown Git error.",
+    });
 
-    return `${repoSeed.root}: Failed to fetch origin. Sync state may be stale. ${message}`;
+    lastOriginFetchWarningOfRepoRoot[repoSeed.root] = warning;
+    return warning;
   }
+
+  delete lastOriginFetchWarningOfRepoRoot[repoSeed.root];
 
   return null;
 };
@@ -1653,21 +1716,129 @@ const readRepoGraphForSeed = async ({
   }
 };
 
+// Detection exposes repo roots so the saved repo list can add chat provider repos without reading full graphs.
+export const readDetectedRepoRoots = async ({
+  threads,
+  repoFolders,
+}: {
+  threads: ChatThread[];
+  repoFolders: ChatProviderRepoFolder[];
+}) => {
+  const repoSeedReadSummary = await readRepoSeeds({ threads, repoFolders });
+
+  return repoSeedReadSummary.repoSeeds.map((repoSeed) => repoSeed.root);
+};
+
+const readRepoSeedsWithPinnedRepoRoots = async ({
+  detectedRepoSeeds,
+  pinnedRepoRoots,
+  shouldLimitToPinnedRepoRoots,
+}: {
+  detectedRepoSeeds: RepoSeed[];
+  pinnedRepoRoots: string[];
+  shouldLimitToPinnedRepoRoots: boolean;
+}) => {
+  const repoSeedOfRoot: { [repoRoot: string]: RepoSeed } = {};
+  const isSeedKeyUsedOfKey: { [key: string]: boolean } = {};
+  const gitErrors: string[] = [];
+
+  for (const repoSeed of detectedRepoSeeds) {
+    repoSeedOfRoot[repoSeed.root] = repoSeed;
+    isSeedKeyUsedOfKey[repoSeed.key] = true;
+  }
+
+  const missingPinnedRepoRoots = pinnedRepoRoots.filter(
+    (repoRoot) => repoSeedOfRoot[repoRoot] === undefined,
+  );
+  const pinnedSeedReadResults = await readValuesWithGitReadLimit({
+    items: missingPinnedRepoRoots,
+    readItem: async (repoRoot) => {
+      return {
+        repoRoot,
+        ...(await readRepoSeedForCwd({
+          cwd: repoRoot,
+          threadIds: [],
+          sourceDescription: "saved repository list",
+        })),
+      };
+    },
+  });
+
+  for (const pinnedSeedReadResult of pinnedSeedReadResults) {
+    if (pinnedSeedReadResult.gitError !== null) {
+      gitErrors.push(pinnedSeedReadResult.gitError);
+    }
+
+    // Unreadable saved repos still get a seed so they stay visible in the sidebar and can be removed.
+    const repoSeed = pinnedSeedReadResult.repoSeed ?? {
+      key: pinnedSeedReadResult.repoRoot,
+      root: pinnedSeedReadResult.repoRoot,
+      originUrl: null,
+      currentBranch: null,
+      defaultBranch: null,
+      threadIds: [],
+    };
+
+    if (
+      repoSeedOfRoot[repoSeed.root] !== undefined ||
+      isSeedKeyUsedOfKey[repoSeed.key] === true
+    ) {
+      continue;
+    }
+
+    repoSeedOfRoot[repoSeed.root] = repoSeed;
+    isSeedKeyUsedOfKey[repoSeed.key] = true;
+  }
+
+  const isPinnedOfRoot: { [repoRoot: string]: boolean } = {};
+  const repoSeeds: RepoSeed[] = [];
+
+  for (const repoRoot of pinnedRepoRoots) {
+    isPinnedOfRoot[repoRoot] = true;
+    const repoSeed = repoSeedOfRoot[repoRoot];
+
+    if (repoSeed !== undefined) {
+      repoSeeds.push(repoSeed);
+    }
+  }
+
+  if (!shouldLimitToPinnedRepoRoots) {
+    for (const repoSeed of detectedRepoSeeds) {
+      if (isPinnedOfRoot[repoSeed.root] !== true) {
+        repoSeeds.push(repoSeed);
+      }
+    }
+  }
+
+  return { repoSeeds, gitErrors };
+};
+
 export const readRepoGraphsWithRepoFolders = async ({
   threads,
   repoFolders,
   focusedRepoRoot,
+  pinnedRepoRoots,
+  shouldLimitToPinnedRepoRoots,
 }: {
   threads: ChatThread[];
   repoFolders: ChatProviderRepoFolder[];
   focusedRepoRoot: string | null;
+  pinnedRepoRoots: string[];
+  shouldLimitToPinnedRepoRoots: boolean;
 }) => {
   const repoSeedReadSummary = await readRepoSeeds({ threads, repoFolders });
-  const { repoSeeds } = repoSeedReadSummary;
+  const pinnedRepoSeedResult = await readRepoSeedsWithPinnedRepoRoots({
+    detectedRepoSeeds: repoSeedReadSummary.repoSeeds,
+    pinnedRepoRoots,
+    shouldLimitToPinnedRepoRoots,
+  });
+  const { repoSeeds } = pinnedRepoSeedResult;
   const repos: RepoGraph[] = [];
   const warnings: string[] = [];
-  const gitErrors: string[] =
-    repoSeeds.length === 0 ? repoSeedReadSummary.gitErrors : [];
+  const gitErrors: string[] = [
+    ...(repoSeeds.length === 0 ? repoSeedReadSummary.gitErrors : []),
+    ...pinnedRepoSeedResult.gitErrors,
+  ];
   const readRepoRoots: string[] = [];
   const focusedRepoSeed =
     repoSeeds.find((repoSeed) => repoSeed.root === focusedRepoRoot) ??
@@ -1735,6 +1906,8 @@ export const readRepoGraphs = async ({
     threads,
     repoFolders: [],
     focusedRepoRoot,
+    pinnedRepoRoots: [],
+    shouldLimitToPinnedRepoRoots: false,
   });
 };
 

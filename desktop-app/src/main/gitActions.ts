@@ -14,6 +14,7 @@ import type {
   GitCreateRefRequest,
   GitDeleteBranchRequest,
   GitDeleteTagRequest,
+  GitHubCredentialSetupResult,
   GitMergeBranchRequest,
   GitMergeBranchResult,
   GitMergePreview,
@@ -21,6 +22,7 @@ import type {
   GitMoveTagRequest,
   GitSwitchBranchRequest,
 } from "../shared/types";
+import { GIT_UNSAFE_ALLOWANCES, readGitProcessEnv } from "./gitEnv";
 
 const FIELD_SEPARATOR = "\u001f";
 const ZERO_SHA = "0000000000000000000000000000000000000000";
@@ -41,7 +43,8 @@ const createGitClientForPath = ({ path }: { path: string }) => {
   return simpleGit({
     baseDir: path,
     timeout: { block: GIT_COMMAND_TIMEOUT_MS },
-  }).env("GIT_TERMINAL_PROMPT", "0");
+    unsafe: GIT_UNSAFE_ALLOWANCES,
+  }).env(readGitProcessEnv());
 };
 
 const runGitCommandForPath = async ({
@@ -87,6 +90,37 @@ const readNullableGitTextForPath = async ({
     return null;
   }
 };
+
+// TODO: AI-PICKED-VALUE: This keeps a hung GitHub CLI call from blocking the credential-fix button forever.
+const GITHUB_CLI_TIMEOUT_MS = 15_000;
+
+const readIsMissingCommandError = (error: unknown) => {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+};
+
+// The one-click credential fix registers the GitHub CLI as Git's credential helper, reusing the user's gh login.
+export const setupGitHubCredentialHelper =
+  async (): Promise<GitHubCredentialSetupResult> => {
+    try {
+      await execFileAsync("gh", ["auth", "status"], {
+        encoding: "utf8",
+        timeout: GITHUB_CLI_TIMEOUT_MS,
+      });
+    } catch (error) {
+      if (readIsMissingCommandError(error)) {
+        return { type: "missingGhCli" };
+      }
+
+      return { type: "needsLogin" };
+    }
+
+    await execFileAsync("gh", ["auth", "setup-git"], {
+      encoding: "utf8",
+      timeout: GITHUB_CLI_TIMEOUT_MS,
+    });
+
+    return { type: "fixed" };
+  };
 
 const runGitHubCliForPath = async ({
   path,
@@ -856,10 +890,21 @@ export const commitAllGitChanges = async ({
     path,
     args: ["rev-parse", "HEAD"],
   });
-  const branchesToMove = await readLocalBranchesAtSha({
-    repoRoot,
-    sha: oldSha,
-  });
+  const currentBranch = await readCurrentBranch({ repoRoot });
+  // An attached HEAD lets git move the current branch itself, so other branches parked at the same commit stay put.
+  // Only a detached HEAD (agent worktrees) needs colocated branches to follow the new commit.
+  const branchesToMove =
+    currentBranch !== null
+      ? []
+      : await readLocalBranchesAtSha({
+          repoRoot,
+          sha: oldSha,
+        });
+  // The local origin/HEAD answer is enough here; a network default-branch lookup would slow down every commit.
+  const defaultBranch =
+    branchesToMove.length === 0
+      ? null
+      : await readLocalDefaultBranch({ repoRoot });
 
   // During a merge, Git expects the index to contain the resolved files.
   // Staging the whole tree here can pull unrelated work into the merge commit.
@@ -876,6 +921,11 @@ export const commitAllGitChanges = async ({
 
   // The commit is complete here, so extra branch tag moves should never make the commit look failed.
   for (const branch of branchesToMove) {
+    // The default branch never silently follows a commit; moving it stays an explicit user action.
+    if (branch === defaultBranch) {
+      continue;
+    }
+
     try {
       const branchRef = `refs/heads/${branch}`;
       const branchHead = await readGitTextForPath({

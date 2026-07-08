@@ -52,6 +52,18 @@ const api: BranchMasterApi = {
 
     return dashboardData;
   },
+  readRepoList: async () => {
+    return await ipcRenderer.invoke("repos:readList");
+  },
+  addRepoFromDialog: async () => {
+    return await ipcRenderer.invoke("repos:addFromDialog");
+  },
+  removeRepo: async (repoRoot: string) => {
+    await ipcRenderer.invoke("repos:remove", repoRoot);
+  },
+  redetectChatProviderRepos: async () => {
+    return await ipcRenderer.invoke("repos:redetectChatProviderRepos");
+  },
   readAnalyticsInstallId: async () => {
     return await ipcRenderer.invoke("analytics:readInstallId");
   },
@@ -231,6 +243,9 @@ const api: BranchMasterApi = {
       "git:createPullRequest",
       gitCreatePullRequestRequest,
     );
+  },
+  setupGithubCredentialHelper: async () => {
+    return await ipcRenderer.invoke("git:setupGithubCredentialHelper");
   },
 };
 

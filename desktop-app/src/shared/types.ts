@@ -1,5 +1,13 @@
 export type ChatProviderId = "codex" | "openCode";
 
+// The renderer matches this command text inside warning strings to attach the "Fix with GitHub CLI" action.
+export const GITHUB_CREDENTIAL_FIX_COMMAND = "gh auth setup-git";
+
+export type GitHubCredentialSetupResult =
+  | { type: "fixed" }
+  | { type: "needsLogin" }
+  | { type: "missingGhCli" };
+
 export type ChatThreadGitInfo = {
   sha: string | null;
   branch: string | null;
@@ -293,6 +301,10 @@ export type BranchMasterApi = {
     request: DashboardReadRequest,
   ) => Promise<DashboardData | null>;
   readDashboardAfterGitMutation: () => Promise<DashboardData>;
+  readRepoList: () => Promise<string[]>;
+  addRepoFromDialog: () => Promise<string | null>;
+  removeRepo: (repoRoot: string) => Promise<void>;
+  redetectChatProviderRepos: () => Promise<string[]>;
   readAnalyticsInstallId: () => Promise<string>;
   readDesktopRuntimeInfo: () => Promise<DesktopRuntimeInfo>;
   readChatProviderDetections: () => Promise<ChatProviderDetection[]>;
@@ -367,4 +379,5 @@ export type BranchMasterApi = {
   createGitPullRequest: (
     gitCreatePullRequestRequest: GitCreatePullRequestRequest,
   ) => Promise<string>;
+  setupGithubCredentialHelper: () => Promise<GitHubCredentialSetupResult>;
 };

@@ -1,4 +1,11 @@
-import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  shell,
+} from "electron";
 import electronUpdater from "electron-updater";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -48,6 +55,9 @@ import {
   readDashboardDataAfterGitMutation,
 } from "./dashboard";
 import { createDashboardRefreshCoordinator } from "./dashboardRefresh";
+import { readDetectedRepoRoots, resetOriginFetchThrottle } from "./gitData";
+import { createRepoListStore } from "./repoListStore";
+import type { RepoListStore } from "./repoListStore";
 import {
   checkoutGitCommit,
   commitAllGitChanges,
@@ -64,6 +74,7 @@ import {
   readGitDiff,
   readGitMainWorktreePathForPath,
   revertGitBranchSyncChanges,
+  setupGitHubCredentialHelper,
   stageGitChanges,
   switchGitBranch,
   unstageGitChanges,
@@ -408,15 +419,38 @@ const startAppServerStatusClient = () => {
     .catch(() => {});
 };
 
+// The repo list store needs the user data path, which is only safe to read once the app singleton is set up.
+let repoListStore: RepoListStore | null = null;
+const readRepoListStore = () => {
+  if (repoListStore === null) {
+    repoListStore = createRepoListStore({
+      userDataPath: app.getPath("userData"),
+    });
+  }
+
+  return repoListStore;
+};
+
 const dashboardRefreshCoordinator = createDashboardRefreshCoordinator({
   readFullDashboardData: async ({ repoRoot }) => {
+    const repoList = await readRepoListStore().readRepoList();
     const chatProviderDashboardData = await readChatProviderDashboardData({
       readAppServerClient,
     });
     const readResult = await readDashboardData({
       chatProviderDashboardData,
       focusedRepoRoot: repoRoot,
+      pinnedRepoRoots: repoList.repoRoots,
+      shouldLimitToPinnedRepoRoots: repoList.didAutoDetectChatProviderRepos,
     });
+
+    // Detection fills the repo list once; afterward the saved list decides what shows until the user re-detects.
+    if (!repoList.didAutoDetectChatProviderRepos) {
+      await readRepoListStore().addRepoRoots(
+        readResult.dashboardData.repos.map((repo) => repo.root),
+      );
+      await readRepoListStore().markDidAutoDetectChatProviderRepos();
+    }
 
     return {
       ...readResult,
@@ -927,6 +961,67 @@ ipcMain.handle("dashboard:readAfterGitMutation", async () => {
   );
 });
 
+ipcMain.handle("repos:readList", async () => {
+  return (await readRepoListStore().readRepoList()).repoRoots;
+});
+
+ipcMain.handle("repos:addFromDialog", async () => {
+  const browserWindow = BrowserWindow.getAllWindows()[0];
+  const openDialogOptions = {
+    title: "Add Repository",
+    properties: ["openDirectory" as const],
+  };
+  const openDialogResult =
+    browserWindow === undefined
+      ? await dialog.showOpenDialog(openDialogOptions)
+      : await dialog.showOpenDialog(browserWindow, openDialogOptions);
+  const selectedPath = openDialogResult.canceled
+    ? undefined
+    : openDialogResult.filePaths[0];
+
+  if (selectedPath === undefined) {
+    return null;
+  }
+
+  let repoRoot: string;
+
+  try {
+    repoRoot = await readGitMainWorktreePathForPath({ path: selectedPath });
+  } catch {
+    throw new Error("The selected folder is not a Git repository.");
+  }
+
+  await readRepoListStore().addRepoRoots([repoRoot]);
+
+  return repoRoot;
+});
+
+ipcMain.handle("repos:remove", async (_event, value: unknown) => {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error("repoRoot must be a non-empty string.");
+  }
+
+  await readRepoListStore().removeRepoRoot(value);
+});
+
+ipcMain.handle("repos:redetectChatProviderRepos", async () => {
+  const chatProviderDashboardData = await readChatProviderDashboardData({
+    readAppServerClient,
+  });
+  const detectedRepoRoots = await readDetectedRepoRoots({
+    threads: chatProviderDashboardData.flatMap(
+      (providerData) => providerData.threads,
+    ),
+    repoFolders: chatProviderDashboardData.flatMap(
+      (providerData) => providerData.repoFolders,
+    ),
+  });
+
+  await readRepoListStore().addRepoRoots(detectedRepoRoots);
+
+  return detectedRepoRoots;
+});
+
 ipcMain.handle("analytics:readInstallId", async () => {
   return await readOrCreateAnalyticsInstallId({
     userDataPath: app.getPath("userData"),
@@ -1270,6 +1365,16 @@ ipcMain.handle("git:mergeBranch", async (_event, value: unknown) => {
 
 ipcMain.handle("git:readDiff", async (_event, value: unknown) => {
   return await readGitDiff(readGitDiffRequest(value));
+});
+
+ipcMain.handle("git:setupGithubCredentialHelper", async () => {
+  const gitHubCredentialSetupResult = await setupGitHubCredentialHelper();
+
+  if (gitHubCredentialSetupResult.type === "fixed") {
+    resetOriginFetchThrottle();
+  }
+
+  return gitHubCredentialSetupResult;
 });
 
 ipcMain.handle("git:createPullRequest", async (_event, value: unknown) => {

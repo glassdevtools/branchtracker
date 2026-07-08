@@ -30,11 +30,10 @@ export const readOrCreateAnalyticsInstallId = async ({
       await readFile(analyticsInstallIdPath, "utf8")
     ).trim();
 
-    if (!readIsAnalyticsInstallId(analyticsInstallId)) {
-      throw new Error("Stored analytics install ID is invalid.");
+    // An invalid stored ID falls through to regeneration so one corrupted file can't disable the install ID forever.
+    if (readIsAnalyticsInstallId(analyticsInstallId)) {
+      return analyticsInstallId;
     }
-
-    return analyticsInstallId;
   } catch (error) {
     if (!readIsMissingFileError(error)) {
       throw error;

@@ -2,8 +2,6 @@ export const readCreatedGitRefName = (gitRefName: string) => {
   return gitRefName.trim().replace(/[^A-Za-z0-9._/-]+/g, "-");
 };
 
-const AUTOMATIC_BRANCH_PREFIX = "branchmaster";
-
 export const readAutomaticBranchName = ({
   title,
   fallbackTitle,
@@ -35,7 +33,7 @@ export const readAutomaticBranchName = ({
     branchNameBase = "branch";
   }
 
-  const branchNameWithoutNumber = `${AUTOMATIC_BRANCH_PREFIX}/${branchNameBase}`;
+  const branchNameWithoutNumber = branchNameBase;
 
   if (isBranchNameUsedOfBranch[branchNameWithoutNumber] !== true) {
     return branchNameWithoutNumber;
@@ -59,11 +57,7 @@ export const readAutomaticCommitMessage = ({
   branch: string;
   isCommitMessageUsedOfMessage: { [message: string]: boolean };
 }) => {
-  const commitMessageWithoutNumber = branch.startsWith(
-    `${AUTOMATIC_BRANCH_PREFIX}/`,
-  )
-    ? branch
-    : `${AUTOMATIC_BRANCH_PREFIX}/${branch}`;
+  const commitMessageWithoutNumber = branch;
 
   if (isCommitMessageUsedOfMessage[commitMessageWithoutNumber] !== true) {
     return commitMessageWithoutNumber;

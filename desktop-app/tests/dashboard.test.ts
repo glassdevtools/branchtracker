@@ -34,6 +34,8 @@ test("reads an empty dashboard without requiring any chat provider", async () =>
       }),
     ],
     focusedRepoRoot: null,
+    pinnedRepoRoots: [],
+    shouldLimitToPinnedRepoRoots: false,
   });
 
   assert.deepEqual(readResult.readRepoRoots, []);
