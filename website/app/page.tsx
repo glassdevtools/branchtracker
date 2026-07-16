@@ -48,7 +48,7 @@ const featureItems = [
   {
     title: "Auto-sync",
     descriptionLines: [
-      "See where every chat lives on your Git tree. BranchMaster auto-detects your local chats and Git changes.",
+      "We auto-detect your chats and Git changes, no action necessary.",
     ],
   },
   {
