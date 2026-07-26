@@ -36,8 +36,7 @@ const featureItems = [
     "Unlike other Git visualizers, see all your worktrees, even ones with no commits or branch tags yet.",
   ],
   [
-    "Commit, branch, merge, and push without leaving the app.",
-    "We let you move branches by dragging, merge by clicking the row you'd like, and get Pull/Push summaries that actually make sense.",
+    "Branches are always just pointers in our model, so pushing, pulling, and moving branches is more intuitive than using Git CLI. We also let you click on a row to merge it into your current head, and suggest commit/push/merge options for all the relevant rows.",
   ],
   ["We auto-detect your chats and Git changes, no action necessary."],
   [
