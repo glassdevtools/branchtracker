@@ -121,7 +121,7 @@ const HomePage = () => {
               />
             </h1>
             <p className="heroSubtext">
-              See your worktrees, chats, and branches, all on one page.
+              See your Codex worktrees, chats, and branches in one place.
             </p>
 
             <div className="hero__actions">
