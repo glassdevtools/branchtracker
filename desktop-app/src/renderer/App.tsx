@@ -180,7 +180,6 @@ const CONTEXT_MENU_WINDOW_MARGIN = 8;
 const COMMIT_GRAPH_SEGMENT_STROKE_WIDTH = 2.25;
 // TODO: AI-PICKED-VALUE: This neutral gray makes changed cwd rows read as working-tree state instead of Git history.
 const COMMIT_GRAPH_CWD_CHANGE_COLOR = "#8b929c";
-const COMMIT_GRAPH_ROW_CONNECTION_INSET_RATIO = 0;
 // TODO: AI-PICKED-VALUE: This initial pane height gives command output room while leaving most of the commit graph visible.
 const TERMINAL_PANE_INITIAL_HEIGHT = 260;
 // TODO: AI-PICKED-VALUE: This minimum keeps the terminal usable after dragging it smaller.
@@ -2329,24 +2328,34 @@ const CommitGraphSvg = ({
     stackedLineHeight: COMMIT_GRAPH_STACKED_ROW_LINE_HEIGHT,
   });
   const graphHeight = graphRowLayout.totalHeight;
-  const readSegmentY = (rowIndex: number) => {
+
+  // Expanded chat rows keep their graph dot and lane change inside the first visible chat line.
+  const readGraphRowCenterY = (rowIndex: number) => {
     const rowLayout = graphRowLayout.rowLayouts[rowIndex];
 
     if (rowLayout === undefined) {
       return graphHeight;
     }
 
-    return rowLayout.center;
+    return rowLayout.top + COMMIT_GRAPH_ROW_HEIGHT / 2;
   };
-  const readSegmentConnectionY = (rowIndex: number) => {
-    const rowLayout = graphRowLayout.rowLayouts[rowIndex];
+  const readLaneChangeY = ({
+    fromRowIndex,
+    toRowIndex,
+  }: {
+    fromRowIndex: number;
+    toRowIndex: number;
+  }) => {
+    const fromRowLayout = graphRowLayout.rowLayouts[fromRowIndex];
+    const toRowLayout = graphRowLayout.rowLayouts[toRowIndex];
 
-    if (rowLayout === undefined) {
+    if (fromRowLayout === undefined || toRowLayout === undefined) {
       return graphHeight;
     }
 
-    return (
-      rowLayout.top + rowLayout.height * COMMIT_GRAPH_ROW_CONNECTION_INSET_RATIO
+    return Math.min(
+      fromRowLayout.top + COMMIT_GRAPH_ROW_HEIGHT,
+      toRowLayout.top,
     );
   };
 
@@ -2376,7 +2385,7 @@ const CommitGraphSvg = ({
                 x1={stubX}
                 y1={rowLayout.top}
                 x2={stubX}
-                y2={rowLayout.top + rowLayout.height}
+                y2={rowLayout.top + COMMIT_GRAPH_ROW_HEIGHT}
                 stroke={row.color}
                 strokeWidth={COMMIT_GRAPH_SEGMENT_STROKE_WIDTH}
                 strokeLinecap="round"
@@ -2386,16 +2395,19 @@ const CommitGraphSvg = ({
         : graph.segments.map((segment) => {
             const fromX = readCommitGraphX(segment.fromLane);
             const toX = readCommitGraphX(segment.toLane);
-            const fromY = readSegmentY(segment.fromRowIndex);
-            const toY = readSegmentY(segment.toRowIndex);
-            const rowTopConnectionY = Math.min(
-              readSegmentConnectionY(segment.toRowIndex),
+            const fromY = readGraphRowCenterY(segment.fromRowIndex);
+            const toY = readGraphRowCenterY(segment.toRowIndex);
+            const laneChangeY = Math.min(
+              readLaneChangeY({
+                fromRowIndex: segment.fromRowIndex,
+                toRowIndex: segment.toRowIndex,
+              }),
               toY,
             );
             const path =
               fromX === toX
                 ? `M ${fromX} ${fromY} L ${toX} ${toY}`
-                : `M ${fromX} ${fromY} L ${toX} ${rowTopConnectionY} L ${toX} ${toY}`;
+                : `M ${fromX} ${fromY} L ${toX} ${laneChangeY} L ${toX} ${toY}`;
 
             return (
               <path
@@ -2418,7 +2430,7 @@ const CommitGraphSvg = ({
         }
 
         const centerX = readCommitGraphX(row.lane);
-        const centerY = rowLayout.center;
+        const centerY = readGraphRowCenterY(rowIndex);
 
         return (
           <g key={row.id}>
