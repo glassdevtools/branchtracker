@@ -50,7 +50,7 @@ Regenerate icons with:
 npm run icons:mac --workspace desktop-app
 ```
 
-The app icon source uses the Apple Icon Composer package at `packaging/macos/icon.icon`. The script uses macOS `sips` and `iconutil` to write the `packaging/macos/generated-icons/icon.icns` rendition used by the app and DMG, plus `packaging/macos/generated-icons/dmg-background.png` and `packaging/macos/generated-icons/dmg-background@2x.png`. That generated directory is ignored and should be recreated before packaging. Windows packaging uses the PNG icon directly.
+The app icon source uses the Apple Icon Composer package at `packaging/macos/icon.icon`. The script uses Swift and AppKit to flatten its transparent foreground over the same white background used by Icon Composer, then uses macOS `sips` and `iconutil` to write the `packaging/macos/generated-icons/icon.icns` rendition used by the app and DMG. It also writes `packaging/macos/generated-icons/dmg-background.png` and `packaging/macos/generated-icons/dmg-background@2x.png`. That generated directory is ignored and should be recreated before packaging. Windows packaging uses the PNG icon directly.
 
 ## Code Signing And Notarization
 
