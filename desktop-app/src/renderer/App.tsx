@@ -1996,7 +1996,9 @@ const BranchTags = ({
             }}
             onDragEnd={finishBranchPointerDrag}
           >
-            <span>Worktree</span>
+            <TitleTooltip title={worktree.path}>
+              <span>Worktree</span>
+            </TitleTooltip>
           </Badge>
         );
       })}
@@ -2107,6 +2109,14 @@ const BranchTags = ({
         if (originBranchTooltip !== null) {
           return (
             <TitleTooltip title={originBranchTooltip} key={ref}>
+              <span className="title-tooltip-trigger">{refBadge}</span>
+            </TitleTooltip>
+          );
+        }
+
+        if (isHead && branchPointerSourcePath !== null) {
+          return (
+            <TitleTooltip title={branchPointerSourcePath} key={ref}>
               <span className="title-tooltip-trigger">{refBadge}</span>
             </TitleTooltip>
           );
