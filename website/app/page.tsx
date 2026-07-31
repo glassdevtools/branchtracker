@@ -121,7 +121,7 @@ const HomePage = () => {
               />
             </h1>
             <p className="heroSubtext">
-              See where all your Codex agents are working on Git.
+              See all your Codex chats, worktrees, and branches in a Git tree.
             </p>
 
             <div className="hero__actions">
