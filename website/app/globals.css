@@ -391,12 +391,14 @@ h1.heroTitle {
   text-wrap: balance;
 }
 
-.productPhoto {
-  margin: 0;
+/* Keep the previews stacked until the desktop layout has room for equal columns. */
+.productPhotos {
+  display: grid;
+  gap: 24px;
 }
 
-.productPhoto + .productPhoto {
-  margin-top: 24px;
+.productPhoto {
+  margin: 0;
 }
 
 .productPhoto img {
@@ -605,6 +607,12 @@ h1.heroTitle {
   width: 20px;
   height: 20px;
   fill: currentColor;
+}
+
+@media (min-width: 761px) {
+  .productPhotos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ============================================================

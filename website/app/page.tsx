@@ -14,6 +14,8 @@ const ctaDownloadButtonClassName = "ctaButton ctaButtonDownload";
 const ctaGithubButtonClassName = "ctaButton ctaButtonGithub";
 const downloadButtonClassName = "downloadButton";
 const githubButtonClassName = "githubButton";
+const productScreenshotSizes =
+  "(max-width: 760px) calc(100vw - 32px), (max-width: 1128px) calc((100vw - 72px) / 2), 528px";
 const featureTokenChatIconClassName =
   "inline-flex h-[1.45em] w-[1.45em] items-center justify-center rounded border border-[#d4dae3] bg-[#eef0f3] align-middle";
 
@@ -144,25 +146,27 @@ const HomePage = () => {
             </div>
           </div>
 
-          <figure className="productPhoto">
-            <Image
-              src={productScreenshot}
-              alt="BranchTracker app showing Codex chats, branches, worktrees, changed files, and Git history"
-              sizes="(max-width: 760px) calc(100vw - 32px), (max-width: 1128px) calc(100vw - 48px), 1080px"
-              preload
-              placeholder="blur"
-              draggable={false}
-            />
-          </figure>
-          <figure className="productPhoto">
-            <Image
-              src={productScreenshotSecondary}
-              alt="BranchTracker app showing worktree labels, Codex chats, branch history, and commit details"
-              sizes="(max-width: 760px) calc(100vw - 32px), (max-width: 1128px) calc(100vw - 48px), 1080px"
-              placeholder="blur"
-              draggable={false}
-            />
-          </figure>
+          <div className="productPhotos">
+            <figure className="productPhoto">
+              <Image
+                src={productScreenshot}
+                alt="BranchTracker app showing Codex chats, branches, worktrees, changed files, and Git history"
+                sizes={productScreenshotSizes}
+                preload
+                placeholder="blur"
+                draggable={false}
+              />
+            </figure>
+            <figure className="productPhoto">
+              <Image
+                src={productScreenshotSecondary}
+                alt="BranchTracker app showing worktree labels, Codex chats, branch history, and commit details"
+                sizes={productScreenshotSizes}
+                placeholder="blur"
+                draggable={false}
+              />
+            </figure>
+          </div>
         </div>
       </section>
 
