@@ -23,7 +23,7 @@
           "image-name": "default-img.png",
           "name": "default-img",
           "position": {
-            "scale": 0.855,
+            "scale": 0.9,
             "translation-in-points": [0, 0]
           }
         }
