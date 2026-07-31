@@ -34,10 +34,17 @@ const config = {
       },
     ],
     icon: "packaging/macos/generated-icons/icon.icns",
+    extraResources: [
+      {
+        from: "packaging/macos/generated-icons/Assets.car",
+        to: "Assets.car",
+      },
+    ],
     // node-pty ships both mac architecture packages in each app build, so universal merging should leave those prebuilds as separate files.
     x64ArchFiles:
       "Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-*/prebuilds/**/*",
     extendInfo: {
+      CFBundleIconName: "icon",
       NSDesktopFolderUsageDescription:
         "BranchTracker needs access to repositories stored on your Desktop so it can read their Git history.",
       NSDocumentsFolderUsageDescription:

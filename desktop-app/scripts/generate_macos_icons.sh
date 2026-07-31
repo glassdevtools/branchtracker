@@ -4,12 +4,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+MACOS_ICON_SOURCE_PATH="packaging/macos/icon.icon"
 MACOS_ICON_IMAGE_NAME="$(node -e 'process.stdout.write(require("./packaging/macos/icon.icon/icon.json").groups[0].layers[0]["image-name"])')"
-MACOS_ICON_FOREGROUND_SOURCE_PATH="packaging/macos/icon.icon/Assets/$MACOS_ICON_IMAGE_NAME"
+MACOS_ICON_FOREGROUND_SOURCE_PATH="$MACOS_ICON_SOURCE_PATH/Assets/$MACOS_ICON_IMAGE_NAME"
 DMG_BACKGROUND_SOURCE_PATH="packaging/macos/assets/dmg-background.svg"
 GENERATED_ICON_DIR="packaging/macos/generated-icons"
 ICONSET_DIR="$GENERATED_ICON_DIR/icon.iconset"
 MACOS_ICON_FLATTENED_SOURCE_PATH="$GENERATED_ICON_DIR/icon-source.png"
+ASSET_CATALOG_OUTPUT_DIR="$GENERATED_ICON_DIR/asset-catalog-output"
 
 if [[ ! -f "$MACOS_ICON_FOREGROUND_SOURCE_PATH" ]]; then
   echo "Missing macOS icon foreground at $MACOS_ICON_FOREGROUND_SOURCE_PATH" >&2
@@ -36,6 +38,11 @@ if ! command -v swift >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! xcrun --find actool >/dev/null 2>&1; then
+  echo "Xcode's actool is required to generate the macOS app icon asset catalog." >&2
+  exit 1
+fi
+
 rm -rf "$GENERATED_ICON_DIR"
 mkdir -p "$GENERATED_ICON_DIR" "$ICONSET_DIR"
 
@@ -54,6 +61,21 @@ sips -z 512 512 "$MACOS_ICON_FLATTENED_SOURCE_PATH" --out "$ICONSET_DIR/icon_512
 sips -z 1024 1024 "$MACOS_ICON_FLATTENED_SOURCE_PATH" --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
 iconutil -c icns "$ICONSET_DIR" -o "$GENERATED_ICON_DIR/icon.icns"
 rm -rf "$ICONSET_DIR"
+
+# Compile the Icon Composer source so macOS 26 can render its white background and native icon shape.
+mkdir -p "$ASSET_CATALOG_OUTPUT_DIR"
+xcrun actool "$REPO_ROOT/$MACOS_ICON_SOURCE_PATH" \
+  --compile "$REPO_ROOT/$ASSET_CATALOG_OUTPUT_DIR" \
+  --platform macosx \
+  --minimum-deployment-target 12.0 \
+  --app-icon icon \
+  --standalone-icon-behavior all \
+  --output-partial-info-plist "$REPO_ROOT/$ASSET_CATALOG_OUTPUT_DIR/icon-info.plist" \
+  --warnings \
+  --errors \
+  --notices >/dev/null
+mv "$ASSET_CATALOG_OUTPUT_DIR/Assets.car" "$GENERATED_ICON_DIR/Assets.car"
+rm -rf "$ASSET_CATALOG_OUTPUT_DIR"
 
 sips -s format png "$DMG_BACKGROUND_SOURCE_PATH" --out "$GENERATED_ICON_DIR/dmg-background.png" >/dev/null
 sips -s format png -z 760 1080 "$DMG_BACKGROUND_SOURCE_PATH" --out "$GENERATED_ICON_DIR/dmg-background@2x.png" >/dev/null

@@ -5,7 +5,7 @@
 BranchTracker uses Electron Builder for macOS packaging. The packaging flow is:
 
 1. Build the Electron app into `out/`.
-2. Regenerate the legacy DMG assets from checked-in packaging assets.
+2. Regenerate the macOS app icon catalog and legacy DMG assets from checked-in packaging assets.
 3. Build universal macOS `dist/BranchTracker-<version>-universal.dmg` and `dist/BranchTracker-<version>-universal.zip`.
 4. Code sign and notarize when signing and Apple credentials are available.
 
@@ -50,7 +50,7 @@ Regenerate icons with:
 npm run icons:mac --workspace desktop-app
 ```
 
-The app icon source uses the Apple Icon Composer package at `packaging/macos/icon.icon`. The script uses Swift and AppKit to flatten its transparent foreground over the same white background used by Icon Composer, then uses macOS `sips` and `iconutil` to write the `packaging/macos/generated-icons/icon.icns` rendition used by the app and DMG. It also writes `packaging/macos/generated-icons/dmg-background.png` and `packaging/macos/generated-icons/dmg-background@2x.png`. That generated directory is ignored and should be recreated before packaging. Windows packaging uses the PNG icon directly.
+The app icon source uses the Apple Icon Composer package at `packaging/macos/icon.icon`. The script uses Xcode 26 to compile its white background and artwork into `packaging/macos/generated-icons/Assets.car` for macOS 26. It also uses Swift and AppKit to flatten the transparent foreground over white, then uses macOS `sips` and `iconutil` to write the legacy `packaging/macos/generated-icons/icon.icns` rendition used by older macOS versions and the DMG. It writes `packaging/macos/generated-icons/dmg-background.png` and `packaging/macos/generated-icons/dmg-background@2x.png` as well. That generated directory is ignored and should be recreated before packaging. Windows packaging uses the PNG icon directly.
 
 ## Code Signing And Notarization
 
