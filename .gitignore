@@ -6,6 +6,7 @@ dist/
 desktop-app/out/
 desktop-app/.test-out/
 desktop-app/dist/
+desktop-app/packaging/macos/generated-icons/
 website/dist/
 website/.next/
 website/tsconfig.tsbuildinfo

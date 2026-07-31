@@ -5,8 +5,9 @@
 BranchTracker uses Electron Builder for macOS packaging. The packaging flow is:
 
 1. Build the Electron app into `out/`.
-2. Build universal macOS `dist/BranchTracker-<version>-universal.dmg` and `dist/BranchTracker-<version>-universal.zip`.
-3. Code sign and notarize when signing and Apple credentials are available.
+2. Regenerate the legacy DMG assets from checked-in packaging assets.
+3. Build universal macOS `dist/BranchTracker-<version>-universal.dmg` and `dist/BranchTracker-<version>-universal.zip`.
+4. Code sign and notarize when signing and Apple credentials are available.
 
 Run:
 
@@ -19,6 +20,7 @@ For a local unsigned package while testing the bundle shape:
 ```bash
 cd desktop-app
 npm run build
+npm run icons:mac
 npx electron-builder --config electron-builder.config.cjs --mac dir -c.mac.identity=null -c.mac.notarize=false
 ```
 
@@ -36,15 +38,19 @@ The first Windows target is x64. Add more Windows architectures only after decid
 
 ## Icons
 
-Keep the checked-in macOS assets here:
+Keep the checked-in macOS app icon package here:
 
 ```text
-packaging/macos/icon.icns
-packaging/macos/dmg-background.png
-packaging/macos/dmg-background@2x.png
+packaging/macos/icon.icon
 ```
 
-The app and DMG use `packaging/macos/icon.icns` directly. The icon has a solid white background and includes the complete macOS icon rendition set. The DMG backgrounds are checked in at 540 by 380 pixels and 1080 by 760 pixels. Windows packaging uses the PNG icon directly.
+Regenerate icons with:
+
+```bash
+npm run icons:mac --workspace desktop-app
+```
+
+The app icon source uses the Apple Icon Composer package at `packaging/macos/icon.icon`. The script uses Swift and AppKit to flatten its transparent foreground over the same white background used by Icon Composer, then uses macOS `sips` and `iconutil` to write the `packaging/macos/generated-icons/icon.icns` rendition used by the app and DMG. It also writes `packaging/macos/generated-icons/dmg-background.png` and `packaging/macos/generated-icons/dmg-background@2x.png`. That generated directory is ignored and should be recreated before packaging. Windows packaging uses the PNG icon directly.
 
 ## Code Signing And Notarization
 

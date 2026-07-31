@@ -1,6 +1,6 @@
 {
   "name": "branchtracker",
-  "version": "0.1.66",
+  "version": "0.1.67",
   "private": true,
   "author": "Glass Devtools, Inc.",
   "repository": {
@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "icons:mac": "scripts/generate_macos_icons.sh",
     "postinstall": "node scripts/fix_node_pty_spawn_helper.cjs",
     "dist:mac": "scripts/package_macos.sh",
     "dist:win": "npm run build && electron-builder --config electron-builder.config.cjs --win",
