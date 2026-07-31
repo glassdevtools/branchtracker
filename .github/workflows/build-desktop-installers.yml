@@ -75,7 +75,7 @@ jobs:
     # The macOS 26 runner produced an invalid app signature even though notarization succeeded, so releases stay on macOS 15 until its signing toolchain is fixed.
     runs-on: macos-15
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
       CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
       APPLE_API_KEY_ID_FROM_SECRET: ${{ secrets.APPLE_API_KEY }}
