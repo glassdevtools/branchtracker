@@ -120,7 +120,7 @@ The macOS release assets must include `latest-mac.yml`, the `.dmg`, the `.zip`, 
 
 `../.github/workflows/build-desktop-installers.yml` builds the macOS and Windows installers on pushes to `main` and manual dispatch.
 
-The workflow reads `desktop-app/package.json` and uses `v<version>` as the release tag. If that GitHub Release already exists, the installer builds are skipped. Otherwise, macOS and Windows installers build in parallel, upload GitHub Actions artifacts, and a final release job waits for both builds before publishing the GitHub Release.
+The workflow reads `desktop-app/package.json` and uses `v<version>` as the release tag. If that GitHub Release already exists, the installer builds are skipped. Otherwise, it compiles the native macOS icon asset on macOS 26, generates the legacy icon and packages and signs the app on macOS 15, uploads the installer artifacts, and publishes the GitHub Release.
 
 If the matching GitHub Release does not exist yet, the workflow requires Apple signing secrets, creates the `v<version>` tag on the current commit when needed, then publishes the signed and notarized macOS release assets and the unsigned Windows installer to `glassdevtools/branchtracker` GitHub Releases. It also uploads `BranchTracker.dmg` for website downloads, plus `latest.dmg` and `BranchTracker.dmg` aliases for compatibility. If Windows packaging is enabled, it also uploads matching `.exe` aliases. If the tag already exists on a different commit, the workflow fails so that a package version cannot silently point at two different builds.
 

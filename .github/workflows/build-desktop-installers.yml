@@ -68,14 +68,40 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  generate-macos-icons:
+    name: Generate macOS icons
+    needs: read-package-release-status
+    if: needs.read-package-release-status.outputs.should_publish == 'true'
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Generate macOS icons
+        run: npm run icons:mac --workspace desktop-app -- native
+
+      - name: Upload macOS icons
+        uses: actions/upload-artifact@v4
+        with:
+          name: branchtracker-macos-icons
+          path: desktop-app/packaging/macos/generated-icons
+          if-no-files-found: error
+          retention-days: 1
+
   build-macos-installer:
     name: Build macOS installer
-    needs: read-package-release-status
+    needs:
+      - read-package-release-status
+      - generate-macos-icons
     if: needs.read-package-release-status.outputs.should_publish == 'true'
     # The macOS 26 runner produced an invalid app signature even though notarization succeeded, so releases stay on macOS 15 until its signing toolchain is fixed.
     runs-on: macos-15
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
       CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
       APPLE_API_KEY_ID_FROM_SECRET: ${{ secrets.APPLE_API_KEY }}
@@ -97,6 +123,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Download macOS icons
+        uses: actions/download-artifact@v4
+        with:
+          name: branchtracker-macos-icons
+          path: desktop-app/packaging/macos/generated-icons
+
+      - name: Generate legacy macOS icons
+        run: npm run icons:mac --workspace desktop-app -- legacy
 
       - name: Prepare App Store Connect key
         id: signing
@@ -136,7 +171,10 @@ jobs:
           exit 1
 
       - name: Build signed macOS installer
-        run: npm run dist:mac --workspace desktop-app -- --publish never
+        working-directory: desktop-app
+        run: |
+          npm run build
+          npx electron-builder --config electron-builder.config.cjs --mac --publish never
 
       - name: Verify macOS app signature
         run: |
