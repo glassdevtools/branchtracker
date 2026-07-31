@@ -253,6 +253,7 @@ const createThreadWithGitInfo = ({
   originUrl: string;
 }) => {
   const thread = createThread({ id, cwd });
+  thread.source = "exec";
   thread.gitInfo = { sha, branch, originUrl };
 
   return thread;

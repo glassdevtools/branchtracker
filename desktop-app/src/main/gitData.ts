@@ -597,7 +597,25 @@ const readWorktrees = async ({
     throw new Error("Git worktree list did not include a main worktree.");
   }
 
-  return { mainWorktreePath, worktrees };
+  // Git can retain metadata after a linked worktree directory is deleted, so only expose worktrees that still exist.
+  const worktreeDirectoryResults = await readValuesWithGitReadLimit({
+    items: worktrees,
+    readItem: async (worktree) => {
+      return {
+        worktree,
+        isDirectory: await readIsDirectory(worktree.path),
+      };
+    },
+  });
+  const existingWorktrees: GitWorktree[] = [];
+
+  for (const worktreeDirectoryResult of worktreeDirectoryResults) {
+    if (worktreeDirectoryResult.isDirectory) {
+      existingWorktrees.push(worktreeDirectoryResult.worktree);
+    }
+  }
+
+  return { mainWorktreePath, worktrees: existingWorktrees };
 };
 
 const splitRefs = (value: string) => {
@@ -1652,6 +1670,49 @@ const readRepoGraphForSeed = async ({
       repoSeed,
       threads,
     });
+
+    // Deleted worktree chats stay in chat history, but they should not enter this repository's visible graph.
+    const localThreadCwds: string[] = [];
+    const isThreadCwdQueuedOfCwd: { [cwd: string]: boolean } = {};
+
+    for (const thread of threads) {
+      if (
+        thread.cwd.length === 0 ||
+        thread.source === "exec" ||
+        isThreadCwdQueuedOfCwd[thread.cwd] === true
+      ) {
+        continue;
+      }
+
+      isThreadCwdQueuedOfCwd[thread.cwd] = true;
+      localThreadCwds.push(thread.cwd);
+    }
+
+    const threadCwdDirectoryResults = await readValuesWithGitReadLimit({
+      items: localThreadCwds,
+      readItem: async (cwd) => {
+        return { cwd, isDirectory: await readIsDirectory(cwd) };
+      },
+    });
+    const isExistingDirectoryOfCwd: { [cwd: string]: boolean } = {};
+
+    for (const threadCwdDirectoryResult of threadCwdDirectoryResults) {
+      isExistingDirectoryOfCwd[threadCwdDirectoryResult.cwd] =
+        threadCwdDirectoryResult.isDirectory;
+    }
+
+    const visibleThreads = threads.filter(
+      (thread) =>
+        thread.cwd.length === 0 ||
+        thread.source === "exec" ||
+        isExistingDirectoryOfCwd[thread.cwd] === true,
+    );
+    const isVisibleThreadOfId: { [threadId: string]: boolean } = {};
+
+    for (const thread of visibleThreads) {
+      isVisibleThreadOfId[thread.id] = true;
+    }
+
     const defaultBranch = await readDefaultBranch({ root: repoSeed.root });
     const originFetchWarning = await fetchOriginRefs({ repoSeed });
 
@@ -1661,7 +1722,7 @@ const readRepoGraphForSeed = async ({
 
     const [commits, branchSyncChanges, isShallowRepositoryText] =
       await Promise.all([
-        readCommits({ repoSeed, threads, worktrees }),
+        readCommits({ repoSeed, threads: visibleThreads, worktrees }),
         readGitBranchSyncChanges({ repoSeed }),
         readNullableGitText({
           cwd: repoSeed.root,
@@ -1699,7 +1760,9 @@ const readRepoGraphForSeed = async ({
         branchSyncChanges,
         worktrees,
         commits,
-        threadIds: repoSeed.threadIds,
+        threadIds: repoSeed.threadIds.filter(
+          (threadId) => isVisibleThreadOfId[threadId] === true,
+        ),
       },
       warnings,
       gitErrors: [],
