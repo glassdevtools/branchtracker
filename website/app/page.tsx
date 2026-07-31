@@ -121,7 +121,7 @@ const HomePage = () => {
               />
             </h1>
             <p className="heroSubtext">
-              Sourcetree for your Codex agents. See all your worktrees and chats in one place.
+              Sourcetree for the age of AI. See all your worktrees and chats in one place.
             </p>
 
             <div className="hero__actions">
