@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 MACOS_ICON_IMAGE_NAME="$(node -e 'process.stdout.write(require("./packaging/macos/icon.icon/icon.json").groups[0].layers[0]["image-name"])')"
+MACOS_ICON_FOREGROUND_SCALE="$(node -e 'process.stdout.write(String(require("./packaging/macos/icon.icon/icon.json").groups[0].layers[0].position.scale))')"
 MACOS_ICON_FOREGROUND_SOURCE_PATH="packaging/macos/icon.icon/Assets/$MACOS_ICON_IMAGE_NAME"
 DMG_BACKGROUND_SOURCE_PATH="packaging/macos/assets/dmg-background.svg"
 GENERATED_ICON_DIR="packaging/macos/generated-icons"
@@ -41,7 +42,7 @@ mkdir -p "$GENERATED_ICON_DIR" "$ICONSET_DIR"
 
 # Generate the legacy DMG icon from the checked-in Apple Icon Composer image.
 # Flatten the foreground over the same white background as the Icon Composer package.
-swift scripts/render_macos_legacy_icon.swift "$MACOS_ICON_FOREGROUND_SOURCE_PATH" "$MACOS_ICON_FLATTENED_SOURCE_PATH"
+swift scripts/render_macos_legacy_icon.swift "$MACOS_ICON_FOREGROUND_SOURCE_PATH" "$MACOS_ICON_FLATTENED_SOURCE_PATH" "$MACOS_ICON_FOREGROUND_SCALE"
 sips -z 16 16 "$MACOS_ICON_FLATTENED_SOURCE_PATH" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null
 sips -z 32 32 "$MACOS_ICON_FLATTENED_SOURCE_PATH" --out "$ICONSET_DIR/icon_16x16@2x.png" >/dev/null
 sips -z 32 32 "$MACOS_ICON_FLATTENED_SOURCE_PATH" --out "$ICONSET_DIR/icon_32x32.png" >/dev/null

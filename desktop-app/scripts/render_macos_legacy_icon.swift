@@ -2,14 +2,22 @@ import AppKit
 import Foundation
 
 // This script flattens the transparent Icon Composer foreground over white for the legacy ICNS pipeline.
-guard CommandLine.arguments.count == 3 else {
-  fputs("Usage: render_macos_legacy_icon.swift <foreground-path> <output-path>\n", stderr)
+guard CommandLine.arguments.count == 4 else {
+  fputs(
+    "Usage: render_macos_legacy_icon.swift <foreground-path> <output-path> <foreground-scale>\n",
+    stderr
+  )
   exit(1)
 }
 
 let foregroundPath = CommandLine.arguments[1]
 let outputPath = CommandLine.arguments[2]
 let iconSize = 1024
+
+guard let foregroundScale = Double(CommandLine.arguments[3]) else {
+  fputs("The macOS icon foreground scale must be a number.\n", stderr)
+  exit(1)
+}
 
 guard let foregroundImage = NSImage(contentsOfFile: foregroundPath) else {
   fputs("Failed to read icon foreground at \(foregroundPath)\n", stderr)
@@ -37,12 +45,19 @@ else {
 }
 
 let iconRect = NSRect(x: 0, y: 0, width: iconSize, height: iconSize)
+let foregroundSize = CGFloat(iconSize) * foregroundScale
+let foregroundRect = NSRect(
+  x: (CGFloat(iconSize) - foregroundSize) / 2,
+  y: (CGFloat(iconSize) - foregroundSize) / 2,
+  width: foregroundSize,
+  height: foregroundSize
+)
 
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = graphicsContext
 NSColor.white.setFill()
 iconRect.fill()
-foregroundImage.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1)
+foregroundImage.draw(in: foregroundRect, from: .zero, operation: .sourceOver, fraction: 1)
 graphicsContext.flushGraphics()
 NSGraphicsContext.restoreGraphicsState()
 
