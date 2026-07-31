@@ -17,9 +17,9 @@
   </tr>
 </table>
 
-It's easy to spin up 100 agents in Codex, but merging them back together is hard. BranchTracker was built to fix that.
+It's easy to spin up 100 agents in Codex, but keeping track of them all is hard. BranchTracker was built to fix that.
 
-[BranchTracker](https://branchtracker.com) is a desktop app that lets you manage your parallel agents and branches in one place. Branch, commit, merge, and push, without fumbling with Codex or Cursor.
+[BranchTracker](https://branchtracker.com) is a desktop app that lets you view where your agents are working on Git. It also lets you branch, commit, merge, and push, without fumbling with Codex or Cursor.
 
 ## Contributing
 

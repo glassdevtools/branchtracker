@@ -10,6 +10,9 @@ export const socialImageSize = {
   width: 1200,
   height: 630,
 };
+// TODO: AI-PICKED-VALUE: These slightly smaller type sizes leave more space before the app preview.
+const socialImageWordmarkFontSize = 46;
+const socialImageTaglineFontSize = 44;
 
 export const createSocialImage = async () => {
   const appIconData = await readFile(
@@ -58,7 +61,7 @@ export const createSocialImage = async () => {
           <img src={appIconSrc} width={86} height={86} alt="" />
           <div
             style={{
-              fontSize: 50,
+              fontSize: socialImageWordmarkFontSize,
               fontWeight: 900,
               lineHeight: 1,
             }}
@@ -68,14 +71,14 @@ export const createSocialImage = async () => {
         </div>
         <div
           style={{
-            fontSize: 52,
+            fontSize: socialImageTaglineFontSize,
             fontWeight: 850,
             lineHeight: 1.02,
             letterSpacing: 0,
             paddingLeft: 16,
           }}
         >
-          Easily merge your agents.
+          See where all your agents are working
         </div>
       </div>
       <img

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 const siteTitle = "BranchTracker";
-const siteDescription = "Sourcetree for your agents.";
+const siteDescription = "See where all your agents are working";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://branchtracker.com"),
