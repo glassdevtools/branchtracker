@@ -347,7 +347,8 @@ img {
 }
 
 .heroInner {
-  width: min(1080px, 100%);
+  /* TODO: AI-PICKED-VALUE: A 1600px maximum makes both previews substantially larger without stretching them across an unlimited desktop width. */
+  width: min(1600px, 100%);
   margin: 0 auto;
 }
 
@@ -609,7 +610,7 @@ h1.heroTitle {
   fill: currentColor;
 }
 
-@media (min-width: 761px) {
+@media (min-width: 1129px) {
   .productPhotos {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

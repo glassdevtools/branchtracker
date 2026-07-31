@@ -15,7 +15,7 @@ const ctaGithubButtonClassName = "ctaButton ctaButtonGithub";
 const downloadButtonClassName = "downloadButton";
 const githubButtonClassName = "githubButton";
 const productScreenshotSizes =
-  "(max-width: 760px) calc(100vw - 32px), (max-width: 1128px) calc((100vw - 72px) / 2), 528px";
+  "(max-width: 760px) calc(100vw - 32px), (max-width: 1128px) calc(100vw - 48px), (max-width: 1648px) calc((100vw - 72px) / 2), 788px";
 const featureTokenChatIconClassName =
   "inline-flex h-[1.45em] w-[1.45em] items-center justify-center rounded border border-[#d4dae3] bg-[#eef0f3] align-middle";
 
