@@ -1471,26 +1471,39 @@ textarea,
 }
 
 .commit-history-row {
+  --commit-history-row-background: #ffffff;
   position: relative;
   z-index: 2;
   height: 25px;
   align-items: stretch;
   border-bottom: 0;
   border-radius: 0;
-  background: #ffffff;
+  background: var(--commit-history-row-background);
   color: #202124;
 }
 
 .commit-history-row:nth-child(even) {
-  background: #ffffff;
+  background: var(--commit-history-row-background);
 }
 
-/* TODO: AI-PICKED-VALUE: This gray is a subtle hover state that keeps the compact table readable without adding row lines. */
+.commit-history-row.commit-history-row-selected {
+  --commit-history-row-background: #e6e6e6;
+}
+
+/* TODO: AI-PICKED-VALUE: Mixing five percent black into either row color keeps the hover change consistent for normal and selected rows. */
 .commit-history-row:hover,
 .commit-history-row-branch-drop-target,
 .commit-history-row-branch-drop-target:nth-child(even) {
   border-radius: 5px;
-  background: #f3f4f6;
+  background: color-mix(
+    in srgb,
+    var(--commit-history-row-background),
+    black 5%
+  );
+}
+
+.commit-history-row.commit-history-row-selected:hover {
+  background: var(--commit-history-row-background);
 }
 
 .commit-history-row-branch-drop-target {

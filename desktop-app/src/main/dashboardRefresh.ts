@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { DashboardData } from "../shared/types";
 
 type DashboardReadMode = "full" | "afterGitMutation";
@@ -173,7 +174,36 @@ export const createDashboardRefreshCoordinator = ({
       return null;
     }
 
-    return await readDashboardDataWithoutOverlap(readMode, repoRoot);
+    const dashboardDataBeforeRead = dashboardDataCache;
+    const dashboardData = await readDashboardDataWithoutOverlap(
+      readMode,
+      repoRoot,
+    );
+
+    if (
+      dashboardDataBeforeRead !== null &&
+      isDeepStrictEqual(dashboardDataBeforeRead.repos, dashboardData.repos) &&
+      isDeepStrictEqual(
+        dashboardDataBeforeRead.threads,
+        dashboardData.threads,
+      ) &&
+      isDeepStrictEqual(
+        dashboardDataBeforeRead.gitChangesOfCwd,
+        dashboardData.gitChangesOfCwd,
+      ) &&
+      isDeepStrictEqual(
+        dashboardDataBeforeRead.gitErrors,
+        dashboardData.gitErrors,
+      ) &&
+      isDeepStrictEqual(
+        dashboardDataBeforeRead.warnings,
+        dashboardData.warnings,
+      )
+    ) {
+      return null;
+    }
+
+    return dashboardData;
   };
 
   return {

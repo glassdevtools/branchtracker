@@ -2483,6 +2483,7 @@ const CommitHistoryRow = ({
   isCommitMessageUsedOfMessage,
   pathLauncher,
   isTerminalBusyOfCwd,
+  isSelected,
   isBranchPointerDropTarget,
   duplicateCheckedOutBranchOfBranch,
   isBranchMergeableOfBranch,
@@ -2497,7 +2498,6 @@ const CommitHistoryRow = ({
   openRowAfterDoubleClick,
   openBranchCreateModal,
   openCommitChangesModal,
-  openChangesDiffModal,
   openBranchMergeModal,
   openBranchPushModal,
   openCopyContextMenu,
@@ -2507,6 +2507,7 @@ const CommitHistoryRow = ({
   showErrorMessage,
   startBranchPointerDrag,
   finishBranchPointerDrag,
+  selectRow,
 }: {
   row: CommitGraphRow;
   branchSyncChanges: GitBranchSyncChange[];
@@ -2521,6 +2522,7 @@ const CommitHistoryRow = ({
   isCommitMessageUsedOfMessage: { [message: string]: boolean };
   pathLauncher: PathLauncher;
   isTerminalBusyOfCwd: { [cwd: string]: boolean };
+  isSelected: boolean;
   isBranchPointerDropTarget: boolean;
   duplicateCheckedOutBranchOfBranch: { [branch: string]: boolean };
   isBranchMergeableOfBranch: { [branch: string]: boolean };
@@ -2541,10 +2543,6 @@ const CommitHistoryRow = ({
     event: MouseEvent<HTMLButtonElement>,
     commitChangesTarget: CommitChangesTarget,
   ) => void;
-  openChangesDiffModal: (
-    event: MouseEvent<HTMLButtonElement>,
-    rowDiffTarget: RowDiffTarget,
-  ) => void;
   openBranchMergeModal: (
     event: MouseEvent<HTMLButtonElement>,
     branch: string,
@@ -2563,7 +2561,10 @@ const CommitHistoryRow = ({
     event: MouseEvent<Element>,
     gitRefContextMenuTarget: Omit<GitRefContextMenuTarget, "x" | "y">,
   ) => void;
-  openCodePath: (path: string) => Promise<void>;
+  openCodePath: (
+    path: string,
+    analyticsEventName?: "repo_opened" | "change_summary_opened",
+  ) => Promise<void>;
   openTerminalPane: (event: MouseEvent<HTMLButtonElement>, cwd: string) => void;
   showErrorMessage: (message: string) => void;
   startBranchPointerDrag: ({
@@ -2584,6 +2585,7 @@ const CommitHistoryRow = ({
     oldSubject: string;
   }) => void;
   finishBranchPointerDrag: () => void;
+  selectRow: (event: MouseEvent<HTMLDivElement>) => void;
 }) => {
   const { commit } = row;
   const threads = row.threadIds
@@ -2885,6 +2887,10 @@ const CommitHistoryRow = ({
     rowClassName = `${rowClassName} commit-history-row-multiline`;
   }
 
+  if (isSelected) {
+    rowClassName = `${rowClassName} commit-history-row-selected`;
+  }
+
   if (mergeBranch !== null && isHeadClean === false) {
     mergeDisabledReason = "Before merging, resolve your changes";
   }
@@ -2908,6 +2914,7 @@ const CommitHistoryRow = ({
         createBranchToMergeTarget !== null ||
         isHeadRow));
   const commitDateText = formatCommitDate(commit.date);
+  const pathLauncherLabel = readPathLauncherLabel(pathLauncher);
   let branchTagsCellClassName = "commit-branch-tags-cell";
 
   if (isBranchPointerDropTarget) {
@@ -2933,6 +2940,8 @@ const CommitHistoryRow = ({
           stackedLineHeight: COMMIT_GRAPH_STACKED_ROW_LINE_HEIGHT,
         }),
       }}
+      data-commit-history-row-id={row.id}
+      onMouseDownCapture={selectRow}
       onDoubleClick={row.isCommitRow ? openRowAfterDoubleClick : undefined}
       onContextMenu={(event) => openRowContextMenu(event, row)}
       onDragOver={updateBranchPointerDropTarget}
@@ -2944,7 +2953,7 @@ const CommitHistoryRow = ({
           <div className="commit-graph-actions">
             {shouldShowGraphThreadActions ? (
               <div className="commit-graph-thread-actions">
-                <TitleTooltip title="Changes">
+                <TitleTooltip title={`Open in ${pathLauncherLabel}`}>
                   <Button
                     className="commit-thread-change-count"
                     variant="ghost"
@@ -2952,20 +2961,14 @@ const CommitHistoryRow = ({
                     type="button"
                     onMouseDown={(event) => event.stopPropagation()}
                     onDoubleClick={(event) => event.stopPropagation()}
-                    onClick={(event) =>
-                      openChangesDiffModal(event, {
-                        title: "Changes",
-                        description: actionThreadGroup.cwd,
-                        repositoryPath: actionThreadGroup.cwd,
-                        request: {
-                          mode: "changesMadeHere",
-                          target: {
-                            type: "path",
-                            path: actionThreadGroup.cwd,
-                          },
-                        },
-                      })
-                    }
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void openCodePath(
+                        actionThreadGroup.cwd,
+                        "change_summary_opened",
+                      );
+                    }}
                   >
                     <GitChangeSummaryText changeSummary={actionChangeSummary} />
                   </Button>
@@ -4472,6 +4475,8 @@ const CommitHistory = ({
 }) => {
   const commitHistoryRef = useRef<HTMLDivElement | null>(null);
   const commitHistoryHeaderScrollRef = useRef<HTMLDivElement | null>(null);
+  const selectedRowIdRef = useRef<string | null>(null);
+  const selectedRowElementRef = useRef<HTMLDivElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const columnResizeRef = useRef<CommitHistoryColumnResize | null>(null);
   const terminalPaneResizeRef = useRef<TerminalPaneResize | null>(null);
@@ -4522,6 +4527,42 @@ const CommitHistory = ({
     useState<BranchPointerMove | null>(null);
   const [branchPointerDropTargetRowId, setBranchPointerDropTargetRowId] =
     useState<string | null>(null);
+  const selectRow = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    const selectedRowId = event.currentTarget.dataset.commitHistoryRowId;
+
+    if (
+      selectedRowId === undefined ||
+      selectedRowElementRef.current === event.currentTarget
+    ) {
+      return;
+    }
+
+    selectedRowElementRef.current?.classList.remove(
+      "commit-history-row-selected",
+    );
+    selectedRowIdRef.current = selectedRowId;
+    selectedRowElementRef.current = event.currentTarget;
+    event.currentTarget.classList.add("commit-history-row-selected");
+  }, []);
+  useEffect(() => {
+    const clearSelectedRowAfterEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      selectedRowElementRef.current?.classList.remove(
+        "commit-history-row-selected",
+      );
+      selectedRowIdRef.current = null;
+      selectedRowElementRef.current = null;
+    };
+
+    window.addEventListener("keydown", clearSelectedRowAfterEscape);
+
+    return () => {
+      window.removeEventListener("keydown", clearSelectedRowAfterEscape);
+    };
+  }, []);
   const updateTerminalStatusState = useCallback(
     ({ cwd, isBusy }: { cwd: string; isBusy: boolean }) => {
       setIsTerminalBusyOfCwd((currentIsTerminalBusyOfCwd) => {
@@ -5842,18 +5883,6 @@ const CommitHistory = ({
   const closeCommitChangesModal = () => {
     setCommitChangesTarget(null);
   };
-  const openChangesDiffModal = (
-    event: MouseEvent<HTMLButtonElement>,
-    rowDiffTarget: RowDiffTarget,
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setRowDiffTarget(rowDiffTarget);
-    trackDesktopAction({
-      eventName: "change_summary_opened",
-      properties: {},
-    });
-  };
   const openTerminalPane = (
     event: MouseEvent<HTMLButtonElement>,
     cwd: string,
@@ -6130,11 +6159,21 @@ const CommitHistory = ({
       },
     );
   };
-  const openCodePath = async (path: string) => {
+  const openCodePath = async (
+    path: string,
+    analyticsEventName: "repo_opened" | "change_summary_opened" =
+      "repo_opened",
+  ) => {
     try {
       await window.branchtracker.openPath({ path, launcher: pathLauncher });
+
+      if (analyticsEventName === "change_summary_opened") {
+        trackDesktopAction({ eventName: analyticsEventName, properties: {} });
+        return;
+      }
+
       trackDesktopAction({
-        eventName: "repo_opened",
+        eventName: analyticsEventName,
         properties: { launcher: pathLauncher, source: "commit_history" },
       });
     } catch (error) {
@@ -6694,6 +6733,7 @@ const CommitHistory = ({
                 isCommitMessageUsedOfMessage={isCommitMessageUsedOfMessage}
                 pathLauncher={pathLauncher}
                 isTerminalBusyOfCwd={isTerminalBusyOfCwd}
+                isSelected={selectedRowIdRef.current === row.id}
                 duplicateCheckedOutBranchOfBranch={
                   duplicateCheckedOutBranchOfBranch
                 }
@@ -6722,7 +6762,6 @@ const CommitHistory = ({
                 openRowAfterDoubleClick={() => openRowAfterDoubleClick(row)}
                 openBranchCreateModal={openBranchCreateModal}
                 openCommitChangesModal={openCommitChangesModal}
-                openChangesDiffModal={openChangesDiffModal}
                 openBranchMergeModal={openBranchMergeModal}
                 openBranchPushModal={openBranchPushModal}
                 openCopyContextMenu={openCopyContextMenu}
@@ -6732,6 +6771,7 @@ const CommitHistory = ({
                 showErrorMessage={showErrorMessage}
                 startBranchPointerDrag={startBranchPointerDrag}
                 finishBranchPointerDrag={finishBranchPointerDrag}
+                selectRow={selectRow}
               />
             ))}
           </div>

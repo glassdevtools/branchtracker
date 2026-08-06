@@ -613,11 +613,10 @@ window.breakdownWebsiteData.desktopApp = {
     {
       feature: "Show change summary",
       stateChanges: [
-        "Change Summary dialog opens with staged and unstaged counts.",
-        "Open Repository uses the selected path launcher.",
+        "Clicking the change summary opens the working directory with the selected path launcher.",
       ],
       backendResponses: [
-        "No backend read is needed to open the dialog because counts are already in dashboardData.",
+        "Electron opens the working directory.",
         "PostHog captures change_summary_opened.",
       ],
     },

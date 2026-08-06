@@ -224,6 +224,33 @@ test("drops idle dashboard reads while another dashboard read is running", async
   assert.equal(fullReadResult.generatedAt, "full");
 });
 
+test("does not return an idle dashboard refresh when only its timestamp changed", async () => {
+  let fullReadCount = 0;
+  const dashboardRefreshCoordinator = createDashboardRefreshCoordinator({
+    readFullDashboardData: async () => {
+      fullReadCount += 1;
+
+      return createDashboardFullReadResult({
+        generatedAt: `full-${fullReadCount}`,
+        readRepoRoots: ["/repo"],
+      });
+    },
+    readDashboardDataAfterGitMutation: async () => {
+      return createDashboardData("after-git-mutation");
+    },
+  });
+
+  await dashboardRefreshCoordinator.readDashboardDataWithoutOverlap(
+    "full",
+    "/repo",
+  );
+  const idleReadResult =
+    await dashboardRefreshCoordinator.readDashboardDataIfIdle("full", "/repo");
+
+  assert.equal(fullReadCount, 2);
+  assert.equal(idleReadResult, null);
+});
+
 test("does not treat duplicate changed repo marks as new mutations", async () => {
   const repoRootGroups: string[][] = [];
   let fullReadCount = 0;
