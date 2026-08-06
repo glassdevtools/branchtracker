@@ -1618,12 +1618,20 @@ textarea,
   gap: 4px;
 }
 
-.commit-thread-group-list-multiline {
-  /* TODO: AI-PICKED-VALUE: This makes each stacked cwd group fit one 25px graph row line. */
+.commit-thread-group-list-multiline,
+.commit-checkout-list-multiline {
+  /* TODO: AI-PICKED-VALUE: This makes each stacked checkout group fit one 25px graph row line. */
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
   gap: 2px;
+}
+
+.commit-checkout-line {
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 
 .commit-ref {

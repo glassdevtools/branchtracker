@@ -62,7 +62,7 @@ window.breakdownWebsiteData.desktopApp = {
       source: "RepoGraph, GitCommit, GitWorktree, CodexThread, gitChangesOfCwd",
       states: "emptyRepos, commitRows, dirtyThreadGroupRows, chatOnlyRows",
       notes:
-        "The visible graph is derived from Git commits, worktrees, Codex threads, uncommitted changes, and the Codex Chats filter.",
+        "The visible graph is derived from Git commits, existing worktrees, Codex threads, uncommitted changes, and the Codex Chats filter. Existing checkouts at the same commit get separate aligned lines; deleted worktree directories are omitted.",
     },
     {
       variable: "pathLauncher",

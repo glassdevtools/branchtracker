@@ -4,8 +4,13 @@ import {
   readDuplicateCheckedOutBranchOfBranch,
   readCommitHistoryCheckoutsForCommit,
   readCommitHistoryRowCheckouts,
+  readCommitHistoryRowThreadGroups,
 } from "../src/renderer/commitHistoryCheckouts";
-import type { GitChangeSummary, GitWorktree } from "../src/shared/types";
+import type {
+  ChatThread,
+  GitChangeSummary,
+  GitWorktree,
+} from "../src/shared/types";
 
 const CLEAN_CHANGE_SUMMARY: GitChangeSummary = {
   staged: {
@@ -53,6 +58,26 @@ const createWorktree = ({
   };
 
   return worktree;
+};
+
+const createThread = ({ id, cwd }: { id: string; cwd: string }) => {
+  const thread: ChatThread = {
+    id,
+    providerId: "codex",
+    name: null,
+    preview: "",
+    cwd,
+    path: null,
+    source: "",
+    modelProvider: "",
+    createdAt: 0,
+    updatedAt: 0,
+    archived: false,
+    status: { type: "idle" },
+    gitInfo: null,
+  };
+
+  return thread;
 };
 
 test("moves a dirty main checkout from the commit row to the changed row", () => {
@@ -212,6 +237,126 @@ test("keeps a dirty detached checkout branchless", () => {
       branch: checkout.branch,
     })),
     [{ path: "/repo/detached", branch: null }],
+  );
+});
+
+test("creates one row line per checkout and groups its chats", () => {
+  const firstCheckout = createWorktree({
+    path: "/repo/first",
+    head: "shared-sha",
+    branch: "first",
+  });
+  const secondCheckout = createWorktree({
+    path: "/repo/second",
+    head: "shared-sha",
+    branch: "second",
+  });
+
+  assert.deepEqual(
+    readCommitHistoryRowThreadGroups({
+      checkouts: [
+        {
+          path: firstCheckout.path,
+          branch: firstCheckout.branch,
+          isMainWorktree: false,
+          worktree: firstCheckout,
+        },
+        {
+          path: secondCheckout.path,
+          branch: secondCheckout.branch,
+          isMainWorktree: false,
+          worktree: secondCheckout,
+        },
+      ],
+      threadGroups: [
+        {
+          key: "cwd:/repo/second/package-a",
+          cwd: "/repo/second/package-a",
+          threads: [
+            createThread({ id: "second-a", cwd: "/repo/second/package-a" }),
+          ],
+        },
+        {
+          key: "cwd:/repo/first/package",
+          cwd: "/repo/first/package",
+          threads: [createThread({ id: "first", cwd: "/repo/first/package" })],
+        },
+        {
+          key: "cwd:/repo/second/package-b",
+          cwd: "/repo/second/package-b",
+          threads: [
+            createThread({ id: "second-b", cwd: "/repo/second/package-b" }),
+          ],
+        },
+      ],
+    }).map((threadGroup) => ({
+      key: threadGroup.key,
+      cwd: threadGroup.cwd,
+      threadIds: threadGroup.threads.map((thread) => thread.id),
+    })),
+    [
+      {
+        key: "checkout:/repo/first",
+        cwd: "/repo/first",
+        threadIds: ["first"],
+      },
+      {
+        key: "checkout:/repo/second",
+        cwd: "/repo/second",
+        threadIds: ["second-a", "second-b"],
+      },
+    ],
+  );
+});
+
+test("keeps a checkout line when it has no chats", () => {
+  const worktree = createWorktree({
+    path: "/repo/clean-worktree",
+    head: "shared-sha",
+    branch: "topic",
+  });
+
+  assert.deepEqual(
+    readCommitHistoryRowThreadGroups({
+      checkouts: [
+        {
+          path: worktree.path,
+          branch: worktree.branch,
+          isMainWorktree: false,
+          worktree,
+        },
+      ],
+      threadGroups: [],
+    }),
+    [
+      {
+        key: "checkout:/repo/clean-worktree",
+        cwd: "/repo/clean-worktree",
+        threads: [],
+      },
+    ],
+  );
+});
+
+test("keeps chat groups that do not belong to a checkout", () => {
+  assert.deepEqual(
+    readCommitHistoryRowThreadGroups({
+      checkouts: [],
+      threadGroups: [
+        {
+          key: "thread:cloud",
+          cwd: "",
+          threads: [],
+        },
+      ],
+    }),
+    [
+      {
+        key: "thread:cloud",
+        cwd: "",
+        threads: [],
+      },
+    ],
   );
 });
 

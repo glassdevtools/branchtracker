@@ -1,5 +1,6 @@
 import type { GitChangeSummary, GitWorktree } from "../shared/types";
 import { readGitChangeCleanState, readIsCwdInsidePath } from "./threadGroups";
+import type { ThreadGroup } from "./threadGroups";
 
 export type CommitHistoryCheckout = {
   path: string;
@@ -96,6 +97,58 @@ export const readCommitHistoryRowCheckouts = ({
   return checkouts.filter(
     (checkout) => checkout.isDirty && checkout.path === owningCheckoutPath,
   );
+};
+
+// Existing checkouts define the visible lines in a history row. Chats inside a
+// checkout share that checkout's line, while chats without a local checkout
+// keep their own cwd line.
+export const readCommitHistoryRowThreadGroups = ({
+  threadGroups,
+  checkouts,
+}: {
+  threadGroups: ThreadGroup[];
+  checkouts: CommitHistoryCheckout[];
+}) => {
+  const checkoutThreadGroups: ThreadGroup[] = checkouts.map((checkout) => ({
+    key: `checkout:${checkout.path}`,
+    cwd: checkout.path,
+    threads: [],
+  }));
+  const unownedThreadGroups: ThreadGroup[] = [];
+
+  for (const threadGroup of threadGroups) {
+    let owningCheckoutIndex: number | null = null;
+
+    for (
+      let checkoutIndex = 0;
+      checkoutIndex < checkouts.length;
+      checkoutIndex += 1
+    ) {
+      const checkout = checkouts[checkoutIndex];
+
+      if (!readIsCwdInsidePath({ cwd: threadGroup.cwd, path: checkout.path })) {
+        continue;
+      }
+
+      if (
+        owningCheckoutIndex === null ||
+        checkout.path.length > checkouts[owningCheckoutIndex].path.length
+      ) {
+        owningCheckoutIndex = checkoutIndex;
+      }
+    }
+
+    if (owningCheckoutIndex === null) {
+      unownedThreadGroups.push(threadGroup);
+      continue;
+    }
+
+    checkoutThreadGroups[owningCheckoutIndex].threads.push(
+      ...threadGroup.threads,
+    );
+  }
+
+  return [...checkoutThreadGroups, ...unownedThreadGroups];
 };
 
 export const readDirtyCommitHistoryCheckoutBranches = (

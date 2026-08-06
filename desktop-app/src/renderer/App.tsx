@@ -124,9 +124,11 @@ import {
 import {
   readCommitHistoryCheckoutsForCommit,
   readCommitHistoryRowCheckouts,
+  readCommitHistoryRowThreadGroups,
   readDirtyCommitHistoryCheckoutBranches,
   readDuplicateCheckedOutBranchOfBranch,
 } from "./commitHistoryCheckouts";
+import type { CommitHistoryCheckout } from "./commitHistoryCheckouts";
 import {
   readCommitGridTemplateColumns,
   readCommitHistoryRowHeight,
@@ -1089,7 +1091,7 @@ type CommitGraphItem = {
   sha: string;
   parents: string[];
   threadIds: string[];
-  unchangedThreadGroupCount: number;
+  commitRowLineCount: number;
   changedThreadGroups: ThreadGroup[];
 };
 
@@ -1318,12 +1320,14 @@ const createCommitGraph = ({
   commits,
   threadOfId,
   mainWorktreePath,
+  currentBranch,
   worktrees,
   gitChangesOfCwd,
 }: {
   commits: GitCommit[];
   threadOfId: { [id: string]: ChatThread };
   mainWorktreePath: string;
+  currentBranch: string | null;
   worktrees: GitWorktree[];
   gitChangesOfCwd: { [cwd: string]: GitChangeSummary };
 }) => {
@@ -1458,8 +1462,8 @@ const createCommitGraph = ({
       gitChangesOfCwd,
     });
     const changedThreadGroups: ThreadGroup[] = [];
+    const unchangedThreadGroups: ThreadGroup[] = [];
     const unchangedThreadIds: string[] = [];
-    let unchangedThreadGroupCount = 0;
 
     for (const threadGroup of threadGroups) {
       if (readIsThreadGroupChanged(threadGroup)) {
@@ -1467,12 +1471,29 @@ const createCommitGraph = ({
         continue;
       }
 
-      unchangedThreadGroupCount += 1;
+      unchangedThreadGroups.push(threadGroup);
 
       for (const thread of threadGroup.threads) {
         unchangedThreadIds.push(thread.id);
       }
     }
+
+    const checkoutsForCommit = readCommitHistoryCheckoutsForCommit({
+      commitSha: commit.sha,
+      isMainHeadCommit: commit.refs.some((ref) => readIsHeadRef(ref)),
+      mainWorktreePath,
+      currentBranch,
+      worktrees,
+      gitChangesOfCwd,
+    });
+    const commitRowCheckouts = readCommitHistoryRowCheckouts({
+      checkouts: checkoutsForCommit,
+      changedWorkingTreeCwd: null,
+    });
+    const commitRowLineCount = readCommitHistoryRowThreadGroups({
+      threadGroups: unchangedThreadGroups,
+      checkouts: commitRowCheckouts,
+    }).length;
 
     graphItems.push({
       id: `commit:${commit.sha}`,
@@ -1480,7 +1501,7 @@ const createCommitGraph = ({
       sha: commit.sha,
       parents: commit.parents,
       threadIds: unchangedThreadIds,
-      unchangedThreadGroupCount,
+      commitRowLineCount,
       changedThreadGroups,
     });
   }
@@ -1609,7 +1630,7 @@ const createCommitGraph = ({
       lane,
       color: readCommitGraphColor(commitLane.colorIndex),
       rowIndex,
-      lineCount: Math.max(1, graphItem.unchangedThreadGroupCount),
+      lineCount: Math.max(1, graphItem.commitRowLineCount),
       childCount: childCountOfSha[graphItem.sha] ?? 0,
     });
     colorIndexOfSha[graphItem.sha] = commitLane.colorIndex;
@@ -1846,7 +1867,7 @@ const readCommitBranchTarget = ({
 
 const BranchTags = ({
   refs,
-  worktrees,
+  checkouts,
   localBranches,
   commitSha,
   commitShortSha,
@@ -1862,7 +1883,7 @@ const BranchTags = ({
   finishBranchPointerDrag,
 }: {
   refs: string[];
-  worktrees: GitWorktree[];
+  checkouts: CommitHistoryCheckout[];
   localBranches: string[];
   commitSha: string;
   commitShortSha: string;
@@ -1961,168 +1982,186 @@ const BranchTags = ({
     }),
   ];
 
-  if (orderedRefs.length === 0 && worktrees.length === 0) {
+  if (
+    orderedRefs.length === 0 &&
+    checkouts.every((checkout) => checkout.worktree === null)
+  ) {
     return null;
   }
 
+  const renderWorktreeBadge = (checkout: CommitHistoryCheckout) => {
+    const worktree = checkout.worktree;
+
+    if (worktree === null) {
+      return null;
+    }
+
+    return (
+      <Badge
+        className="commit-ref commit-ref-head commit-ref-draggable"
+        variant="secondary"
+        draggable
+        key={`worktree:${worktree.path}`}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) =>
+          openCopyContextMenu(
+            event,
+            worktree.path,
+            "worktree path",
+            "Failed to copy worktree path.",
+          )
+        }
+        onDragStart={(event) => {
+          startBranchPointerDrag({
+            event,
+            gitRefType: "worktree",
+            refName: "Worktree",
+            sourcePath: worktree.path,
+            oldSha: commitSha,
+            oldShortSha: commitShortSha,
+            oldSubject: commitSubject,
+          });
+        }}
+        onDragEnd={finishBranchPointerDrag}
+      >
+        <TitleTooltip title={worktree.path}>
+          <span>Worktree</span>
+        </TitleTooltip>
+      </Badge>
+    );
+  };
+  const refBadges = orderedRefs.map((ref) => {
+    const isHead = readIsHeadRef(ref);
+    const refName = isHead ? "HEAD" : cleanRefName(ref);
+    const cleanName = cleanRefName(ref);
+    const isLocalBranch = isLocalBranchOfName[refName] === true;
+    const isTag = ref.startsWith("tag: ");
+    const isOriginBranch = refName.startsWith("origin/");
+    const shouldDragRef = isHead || isLocalBranch || isTag;
+    let refClassName = "commit-ref commit-ref-local";
+    const originBranchName =
+      isOriginBranch && refName !== "origin/HEAD"
+        ? refName.slice("origin/".length)
+        : null;
+    const originBranchTooltip =
+      originBranchName === null
+        ? null
+        : `${originBranchName} is here on origin, but not here locally. Push or Sync to update origin.`;
+    const deleteWarningMessage = isTag
+      ? (deleteWarningMessageOfTag[cleanName] ?? null)
+      : (deleteWarningMessageOfBranch[refName] ?? null);
+    const shouldBlockDelete =
+      !isTag && shouldBlockDeleteOfBranch[refName] === true;
+    const shouldShowDuplicateCheckoutWarning =
+      isLocalBranch && duplicateCheckedOutBranchOfBranch[refName] === true;
+
+    if (isOriginBranch) {
+      refClassName = "commit-ref commit-ref-origin";
+    }
+
+    if (isTag) {
+      refClassName = "commit-ref commit-ref-tag";
+    }
+
+    if (isHead) {
+      refClassName = "commit-ref commit-ref-head";
+    }
+
+    const refBadge = (
+      <Badge
+        className={cn(refClassName, shouldDragRef && "commit-ref-draggable")}
+        variant="secondary"
+        draggable={shouldDragRef}
+        key={ref}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => {
+          if (isTag || isLocalBranch) {
+            openGitRefContextMenu(event, {
+              gitRefType: isTag ? "tag" : "branch",
+              name: isTag ? cleanName : refName,
+              oldSha: commitSha,
+              warningMessage: deleteWarningMessage,
+              shouldBlockDelete,
+            });
+            return;
+          }
+
+          openCopyContextMenu(
+            event,
+            refName,
+            isHead ? "ref" : "branch",
+            isTag ? "Failed to copy tag name." : "Failed to copy branch name.",
+          );
+        }}
+        onDragStart={(event) => {
+          if (!shouldDragRef) {
+            return;
+          }
+
+          startBranchPointerDrag({
+            event,
+            gitRefType: isHead ? "head" : isTag ? "tag" : "branch",
+            refName,
+            sourcePath: isTag ? null : branchPointerSourcePath,
+            oldSha: commitSha,
+            oldShortSha: commitShortSha,
+            oldSubject: commitSubject,
+          });
+        }}
+        onDragEnd={finishBranchPointerDrag}
+      >
+        {shouldShowDuplicateCheckoutWarning ? (
+          <TitleTooltip title={DUPLICATE_CHECKOUT_BRANCH_WARNING}>
+            <span
+              className="commit-ref-duplicate-checkout-warning"
+              role="img"
+              aria-label={DUPLICATE_CHECKOUT_BRANCH_WARNING}
+            >
+              <TriangleAlert aria-hidden="true" size={9} strokeWidth={2.25} />
+            </span>
+          </TitleTooltip>
+        ) : null}
+        <span>{refName}</span>
+      </Badge>
+    );
+
+    if (originBranchTooltip !== null) {
+      return (
+        <TitleTooltip title={originBranchTooltip} key={ref}>
+          <span className="title-tooltip-trigger">{refBadge}</span>
+        </TitleTooltip>
+      );
+    }
+
+    if (isHead && branchPointerSourcePath !== null) {
+      return (
+        <TitleTooltip title={branchPointerSourcePath} key={ref}>
+          <span className="title-tooltip-trigger">{refBadge}</span>
+        </TitleTooltip>
+      );
+    }
+
+    return refBadge;
+  });
+
+  if (checkouts.length <= 1) {
+    return (
+      <div className="commit-label-list">
+        {checkouts.map(renderWorktreeBadge)}
+        {refBadges}
+      </div>
+    );
+  }
+
   return (
-    <div className="commit-label-list">
-      {worktrees.map((worktree) => {
+    <div className="commit-label-list commit-checkout-list-multiline">
+      {checkouts.map((checkout, checkoutIndex) => {
         return (
-          <Badge
-            className="commit-ref commit-ref-head commit-ref-draggable"
-            variant="secondary"
-            draggable
-            key={`worktree:${worktree.path}`}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onContextMenu={(event) =>
-              openCopyContextMenu(
-                event,
-                worktree.path,
-                "worktree path",
-                "Failed to copy worktree path.",
-              )
-            }
-            onDragStart={(event) => {
-              startBranchPointerDrag({
-                event,
-                gitRefType: "worktree",
-                refName: "Worktree",
-                sourcePath: worktree.path,
-                oldSha: commitSha,
-                oldShortSha: commitShortSha,
-                oldSubject: commitSubject,
-              });
-            }}
-            onDragEnd={finishBranchPointerDrag}
-          >
-            <TitleTooltip title={worktree.path}>
-              <span>Worktree</span>
-            </TitleTooltip>
-          </Badge>
+          <span className="commit-checkout-line" key={checkout.path}>
+            {renderWorktreeBadge(checkout)}
+            {checkoutIndex === 0 ? refBadges : null}
+          </span>
         );
-      })}
-      {orderedRefs.map((ref) => {
-        const isHead = readIsHeadRef(ref);
-        const refName = isHead ? "HEAD" : cleanRefName(ref);
-        const cleanName = cleanRefName(ref);
-        const isLocalBranch = isLocalBranchOfName[refName] === true;
-        const isTag = ref.startsWith("tag: ");
-        const isOriginBranch = refName.startsWith("origin/");
-        const shouldDragRef = isHead || isLocalBranch || isTag;
-        let refClassName = "commit-ref commit-ref-local";
-        const originBranchName =
-          isOriginBranch && refName !== "origin/HEAD"
-            ? refName.slice("origin/".length)
-            : null;
-        const originBranchTooltip =
-          originBranchName === null
-            ? null
-            : `${originBranchName} is here on origin, but not here locally. Push or Sync to update origin.`;
-        const deleteWarningMessage = isTag
-          ? (deleteWarningMessageOfTag[cleanName] ?? null)
-          : (deleteWarningMessageOfBranch[refName] ?? null);
-        const shouldBlockDelete =
-          !isTag && shouldBlockDeleteOfBranch[refName] === true;
-        const shouldShowDuplicateCheckoutWarning =
-          isLocalBranch && duplicateCheckedOutBranchOfBranch[refName] === true;
-
-        if (isOriginBranch) {
-          refClassName = "commit-ref commit-ref-origin";
-        }
-
-        if (isTag) {
-          refClassName = "commit-ref commit-ref-tag";
-        }
-
-        if (isHead) {
-          refClassName = "commit-ref commit-ref-head";
-        }
-
-        const refBadge = (
-          <Badge
-            className={cn(
-              refClassName,
-              shouldDragRef && "commit-ref-draggable",
-            )}
-            variant="secondary"
-            draggable={shouldDragRef}
-            key={ref}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onContextMenu={(event) => {
-              if (isTag || isLocalBranch) {
-                openGitRefContextMenu(event, {
-                  gitRefType: isTag ? "tag" : "branch",
-                  name: isTag ? cleanName : refName,
-                  oldSha: commitSha,
-                  warningMessage: deleteWarningMessage,
-                  shouldBlockDelete,
-                });
-                return;
-              }
-
-              openCopyContextMenu(
-                event,
-                refName,
-                isHead ? "ref" : "branch",
-                isTag
-                  ? "Failed to copy tag name."
-                  : "Failed to copy branch name.",
-              );
-            }}
-            onDragStart={(event) => {
-              if (!shouldDragRef) {
-                return;
-              }
-
-              startBranchPointerDrag({
-                event,
-                gitRefType: isHead ? "head" : isTag ? "tag" : "branch",
-                refName,
-                sourcePath: isTag ? null : branchPointerSourcePath,
-                oldSha: commitSha,
-                oldShortSha: commitShortSha,
-                oldSubject: commitSubject,
-              });
-            }}
-            onDragEnd={finishBranchPointerDrag}
-          >
-            {shouldShowDuplicateCheckoutWarning ? (
-              <TitleTooltip title={DUPLICATE_CHECKOUT_BRANCH_WARNING}>
-                <span
-                  className="commit-ref-duplicate-checkout-warning"
-                  role="img"
-                  aria-label={DUPLICATE_CHECKOUT_BRANCH_WARNING}
-                >
-                  <TriangleAlert
-                    aria-hidden="true"
-                    size={9}
-                    strokeWidth={2.25}
-                  />
-                </span>
-              </TitleTooltip>
-            ) : null}
-            <span>{refName}</span>
-          </Badge>
-        );
-
-        if (originBranchTooltip !== null) {
-          return (
-            <TitleTooltip title={originBranchTooltip} key={ref}>
-              <span className="title-tooltip-trigger">{refBadge}</span>
-            </TitleTooltip>
-          );
-        }
-
-        if (isHead && branchPointerSourcePath !== null) {
-          return (
-            <TitleTooltip title={branchPointerSourcePath} key={ref}>
-              <span className="title-tooltip-trigger">{refBadge}</span>
-            </TitleTooltip>
-          );
-        }
-
-        return refBadge;
       })}
     </div>
   );
@@ -2591,7 +2630,7 @@ const CommitHistoryRow = ({
   const threads = row.threadIds
     .map((rowThreadId) => threadOfId[rowThreadId])
     .filter((rowThread): rowThread is ChatThread => rowThread !== undefined);
-  const threadGroups =
+  const ungroupedThreadGroups =
     row.threadGroup === null
       ? readDisplayedThreadGroups({
           threads,
@@ -2619,12 +2658,15 @@ const CommitHistoryRow = ({
     changedWorkingTreeCwd:
       row.threadGroup === null ? null : row.threadGroup.cwd,
   });
+  const threadGroups = readCommitHistoryRowThreadGroups({
+    threadGroups: ungroupedThreadGroups,
+    checkouts: rowCheckouts,
+  });
   const dirtyCheckoutBranchOfBranch =
     readDirtyCommitHistoryCheckoutBranches(checkoutsForCommit);
   const movedThreadBranchOfBranch: { [branch: string]: boolean } = {};
   const rowCheckoutBranchOfBranch: { [branch: string]: boolean } = {};
   const rowCheckoutRefs: string[] = [];
-  const worktreesForRow: GitWorktree[] = [];
   const rowLocalBranches: string[] = [];
   const isRowLocalBranchAddedOfBranch: { [branch: string]: boolean } = {};
 
@@ -2642,8 +2684,6 @@ const CommitHistoryRow = ({
       rowCheckoutRefs.push(
         rowCheckout.branch === null ? "HEAD" : `HEAD -> ${rowCheckout.branch}`,
       );
-    } else if (rowCheckout.worktree !== null) {
-      worktreesForRow.push(rowCheckout.worktree);
     }
 
     if (rowCheckout.branch !== null) {
@@ -3084,10 +3124,10 @@ const CommitHistoryRow = ({
         />
       </div>
       <div className={branchTagsCellClassName}>
-        {row.isCommitRow || rowRefs.length > 0 || worktreesForRow.length > 0 ? (
+        {row.isCommitRow || rowRefs.length > 0 || rowCheckouts.length > 0 ? (
           <BranchTags
             refs={rowRefs}
-            worktrees={worktreesForRow}
+            checkouts={rowCheckouts}
             localBranches={rowLocalBranches}
             commitSha={commit.sha}
             commitShortSha={commit.shortSha}
@@ -4739,10 +4779,18 @@ const CommitHistory = ({
         commits,
         threadOfId,
         mainWorktreePath,
+        currentBranch,
         worktrees,
         gitChangesOfCwd,
       }),
-    [commits, gitChangesOfCwd, mainWorktreePath, threadOfId, worktrees],
+    [
+      commits,
+      currentBranch,
+      gitChangesOfCwd,
+      mainWorktreePath,
+      threadOfId,
+      worktrees,
+    ],
   );
   const pullRequestBaseBranches = useMemo(
     () => readPushedBranchNames({ commits, defaultBranch }),
